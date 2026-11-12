@@ -39,7 +39,7 @@ Phaser 3 is deliberately pinned rather than adopting a major-version migration w
 
 User-controlled local server/VM -> HTTPS/WSS ingress -> domain -> client-rendered game. Cloudflare Tunnel is a suitable ingress option, with no Cloudflare-specific match-state APIs. Domain/credentials are not supplied; no live publishing is assumed.
 
-Installable PWA is a planned platform milestone: manifest, proper icons, service worker, versioned caches, update UX between matches and actual Android installation evidence. Foundation includes metadata/icons but deliberately no caching service worker. Never serve a stale client against an incompatible server. Cached UI does not imply offline multiplayer.
+The foundation now includes a manifest, icons and a production-only service worker with a build-specific precache of both app shells and static assets. Navigation prefers the network and falls back to a cached shell; API/WebSocket traffic is never cached. A newly installed worker waits for old controlled pages to close instead of forcing an update. Chrome installability and offline shell are checked in Chromium on localhost. Actual Android installation and match-aware update UX remain open gates. Cached UI does not imply offline multiplayer.
 
 Reconnect support is mandatory for the playable release because browser suspension, phone lock and proxy reconnects can interrupt a socket. Use heartbeat, bounded retries and full state restoration. Do not promise an always-running background web app.
 

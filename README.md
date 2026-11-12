@@ -2,7 +2,7 @@
 
 Ukrainian, playful browser games for up to four family members, installed on Android as a PWA when that milestone is complete. The game hub lives here; the first game is **Їжачі баталії** (Hedge Wars).
 
-This repository currently provides a runnable hub, a Phaser workshop preview, a typed WebSocket handshake and a development/documentation foundation. It is not yet a playable artillery game. Multiplayer rooms, physics, terrain destruction and an installable/offline PWA are planned, not implemented.
+This repository currently provides a runnable hub, a Phaser workshop preview, a typed WebSocket handshake and a development/documentation foundation. It is not yet a playable artillery game. Multiplayer rooms, physics and terrain destruction are planned. A production PWA shell is implemented; actual Android installation over the final HTTPS domain still needs device verification, and offline multiplayer is not available.
 
 ## Layout and ownership
 

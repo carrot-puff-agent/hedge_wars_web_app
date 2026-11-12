@@ -1,0 +1,20 @@
+[Unit]
+Description=Yizhaklub family games web application
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/games-web-app
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=9999
+ExecStart=/usr/bin/node /home/dev/games-web-app/01_hedge_wars/server/dist/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

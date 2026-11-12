@@ -35,3 +35,26 @@ test('reduced motion and keyboard navigation remain usable', async ({ page }) =>
   expect(response.ok()).toBe(true);
   expect((await response.json()).lang).toBe('uk');
 });
+
+test('PWA installs its shell cache and serves visited routes offline', async ({ page, context }) => {
+  test.skip(process.env.E2E_MODE === 'development', 'Service worker is generated for production builds.');
+  await page.goto('/');
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  const cdp = await context.newCDPSession(page);
+  const installability = await cdp.send('Page.getInstallabilityErrors');
+  // Playwright's isolated contexts are incognito and Chrome cannot install into them.
+  expect(installability.installabilityErrors.filter((error) => error.errorId !== 'in-incognito')).toEqual([]);
+  await context.setOffline(true);
+  try {
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Збирай своїх. Буде весело!' })).toBeVisible();
+    await page.goto('/games/hedge-wars/');
+    await expect(page.getByRole('heading', { name: 'Їжачі баталії' })).toBeVisible();
+    await expect(page.locator('canvas')).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+    await cdp.detach();
+  }
+});

@@ -1,5 +1,8 @@
 import { games } from '../../platform/games';
+import { registerPwa } from '../../platform/pwa';
 import './style.css';
+
+registerPwa();
 
 const game = games[0];
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `

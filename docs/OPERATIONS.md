@@ -1,6 +1,19 @@
 # Development and operations runbook
 
-Repository root: `/home/coder/_PROJECTS/07_games_web_app`. No production service, domain or Cloudflare Tunnel is installed by the foundation. Current hello endpoint has no sessions/rooms; complete NET-08 before exposing gameplay publicly.
+Repository root: `/home/coder/_PROJECTS/07_games_web_app`. The foundation is deployed on the dedicated Debian LXC; the user manages the domain and Cloudflare Tunnel. Current hello endpoint has no sessions/rooms; complete NET-08 before exposing gameplay publicly.
+
+## Dedicated LXC deployment
+
+- LXC: `192.168.1.70`, user `dev`, source/build at `/home/dev/games-web-app`.
+- Origin: `http://192.168.1.70:9999`, listening on the LXC network interface. Route the user's Cloudflare Tunnel to this HTTP origin and preserve the public `Host` header for WebSocket origin validation.
+- Unit: `/etc/systemd/system/yizhaklub.service`, copied from `deploy/yizhaklub.service`; enabled at boot, running as `dev`, `Restart=on-failure`.
+- LXC uses Debian's Node 20.19.2 and npm 9.2.0. Source, dependencies and builds are installed there; Git credentials and `LXC_details.txt` are excluded from the mirror.
+- Manage on the LXC: `sudo systemctl status yizhaklub`, `sudo systemctl restart yizhaklub`, `sudo systemctl stop yizhaklub`; logs: `journalctl -u yizhaklub -n 100 --no-pager`.
+- Verification after restart: `systemctl is-enabled yizhaklub`, `systemctl is-active yizhaklub`, then request `/api/health`, `/`, `/games/hedge-wars/`, `/manifest.webmanifest`, `/sw.js` and test `/ws`.
+
+This is a snapshot, not an automatic synchronization service. For subsequent approved deploys, mirror the source from the repository root without `.git`, `node_modules`, any `dist`, `.local`, test artifacts, `LXC_details.txt`, or `.env*`. Then on the LXC run `cd /home/dev/games-web-app && npm ci && npm run check && sudo systemctl restart yizhaklub`. Back up a known-good release before deploying changes; rollback has not yet been rehearsed. The LXC is a separate Debian host and uses systemd; the original VM's `agent-service` rules remain applicable to services on that VM.
+
+HTTPS on the final Cloudflare hostname is required for Chrome's PWA features. The initial shell caches both routes and built assets; API/WebSocket traffic always requires the server. A new worker waits for existing controlled pages to close. Match-aware update prompts, real Android installation and HTTPS tunnel testing remain open.
 
 ## Local environment
 

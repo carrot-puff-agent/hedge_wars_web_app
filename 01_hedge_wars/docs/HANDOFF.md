@@ -13,7 +13,7 @@ Updated: 2026-11-12. Current session: `2026-11-12-foundation`.
 
 Local foundation is complete and verified. Hub/game preview and a typed hello are present. This is not playable multiplayer. Do not replace the acceptance/checklist with claims based on the workshop animation.
 
-Physics, terrain, weapon behavior, room/session lifecycle, reconnect, matches and PWA worker are unimplemented. The source checkout in the older project is reference-only and not a build dependency. No upstream material has been imported.
+Physics, terrain, weapon behavior, room/session lifecycle, reconnect and matches are unimplemented. A versioned PWA shell worker exists; match-aware updates and real Android installation remain unverified. The source checkout in the older project is reference-only and not a build dependency. No upstream material has been imported.
 
 ## Decisions
 
@@ -26,7 +26,8 @@ Parent root is intentionally the Git root so hub and future games are versioned 
 - `npm run test:e2e`: four tests passed against production files, desktop and 360px Android emulation.
 - `npm run test:dev`: four tests passed through Vite proxies/HMR. Graceful teardown confirmed all four application/test ports closed.
 - Visual review: original Ukrainian desktop/mobile hub and workshop; screenshots under ignored `.local/screenshots/`.
-- No actual Android hardware, installed PWA, Cloudflare route or playable multiplayer has been tested.
+- Dedicated LXC `192.168.1.70:9999`: `yizhaklub.service` enabled and active, sources `/home/dev/games-web-app`. LXC clean install/check/build and HTTP/WSS checks passed. See `docs/OPERATIONS.md` at the repository root.
+- Production PWA worker caches a versioned shell; Chrome installability/offline checks passed against the LXC using a temporary secure-origin override. No actual HTTPS domain, Android hardware, installed PWA, actual reboot or playable multiplayer has been tested.
 - Known build note: the lazy-loaded Phaser preview chunk is about 1.20 MB / 320 KB gzip; map/device performance is not yet measured. Do not hide the warning by claiming an optimization.
 - Foundation committed locally as `33ac73b`, followed by a documentation commit recording this handoff. GitHub push is blocked: `GIT_TERMINAL_PROMPT=0 git push -u origin main` failed with `could not read Username for 'https://github.com': terminal prompts disabled`. `gh repo view` also returned HTTP 401; read-only Git access worked with an empty remote. Restore GitHub authentication through the user/administrator, then run a normal push. No tokens were inspected or changed.
 - No user Git identity was configured. Bootstrap commits use the transparent automated author `Project bootstrap agent <bootstrap@local.invalid>` via per-command options. No global Git identity was changed.
@@ -37,5 +38,5 @@ Begin SIM-01: add the pure simulation workspace with serializable state, seeded 
 
 ## Processes
 
-No persistent service has been created. All temporary development/test listeners on 5173, 5174, 8787 and 8790 were confirmed closed after verification. The user can start the local preview with `npm run dev` from the root.
+`yizhaklub.service` is intentionally running on the dedicated LXC at port 9999 and enabled at boot. No persistent service was created on the original VM. An already-running development launcher occupied local ports 5173, 5174 and 8787 during the LXC session; it was not started or stopped by that session. The local development preview can otherwise be started with `npm run dev` from the root.
 

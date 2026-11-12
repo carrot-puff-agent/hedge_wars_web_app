@@ -1,5 +1,8 @@
 import { PROTOCOL_VERSION, ServerMessage } from '@yizhaklub/hedge-protocol';
+import { registerPwa } from '../../../platform/pwa';
 import './style.css';
+
+registerPwa();
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <header class="game-header"><a class="back" href="/">← До клубу</a><span class="club-name">їжаклуб ✳</span></header>

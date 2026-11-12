@@ -10,4 +10,5 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+LXC_details.txt
 
