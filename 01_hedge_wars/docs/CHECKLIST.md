@@ -13,6 +13,7 @@ Dependencies: none. Gate: FND-A01–FND-A07. Foundation does not imply a playabl
 - [x] FND-05 — Implement validated hello protocol, health/catalogue endpoints and safe static routing. FND-A04: real-socket and HTTP tests passed, including rejection paths.
 - [x] FND-06 — Add CI, meaningful contract/server/browser smoke checks; run locally and record results. Two unit/integration tests and four browser tests in each of production/development modes passed. CI execution on GitHub is not yet observed.
 - [!] FND-07 — Local foundation commit `33ac73b` exists; GitHub synchronization is blocked by missing Git credentials. `git push -u origin main` failed: could not read Username for https://github.com (terminal prompts disabled). Restore VM authentication, then push normally. See foundation session log. FND-A07 blocker is explicit; remote synchronization is not claimed.
+- [x] HUB-01 — Game-neutral Ігротека chooser and Material controller app icon deployed on LXC. Viewport, authenticated manifest, offline shell and ten browser checks passed; see session 2026-11-12-hub-redesign. Real Android launcher icon refresh remains an observation to collect.
 
 ## Phase 1 — pure simulation and terrain
 
@@ -64,7 +65,7 @@ Dependencies: Phases 1–3. Gate: GAME-A01–GAME-A04.
 Dependencies: complete game loop and protocol compatibility. Gate: PWA-A01–PWA-A05, OPS-A01–OPS-A04.
 
 - [~] PWA-01 — Versioned PWA shell worker and offline assets implemented, Chrome-emulated tests passed. Match-aware update availability UI and activation between matches remain open. See 2026-11-12-lxc session.
-- [~] PWA-02 — Authenticated manifest cookie regression reproduced and fixed on both pages; deployed LXC build awaiting Samsung retest. Actual Android installation and HTTPS deep links remain to be verified.
+- [~] PWA-02 — Authenticated manifest cookie regression reproduced and fixed; user confirmed Samsung installation works. Standalone launch/deep links and updates over HTTPS still require verification.
 - [ ] PWA-03 — Test cached-client/server mismatch, reload recovery and cache cleanup. Do not claim offline multiplayer.
 - [ ] OPS-01 — Obtain domain/target host details and configure user-approved HTTPS/WSS ingress (Cloudflare Tunnel or equivalent).
 - [~] OPS-02 — Dedicated LXC systemd service enabled, active and restart-tested on port 9999; documented. Actual reboot and rollback rehearsal remain open for OPS-A02. Preserve original VM agent-service conventions on that host.

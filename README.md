@@ -1,4 +1,4 @@
-# Їжаклуб — family games on your own server
+# Ігротека — family games on your own server
 
 Ukrainian, playful browser games for up to four family members, installed on Android as a PWA when that milestone is complete. The game hub lives here; the first game is **Їжачі баталії** (Hedge Wars).
 

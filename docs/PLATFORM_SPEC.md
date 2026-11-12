@@ -4,7 +4,7 @@ Status: accepted foundation direction, 2026-11-12. Scope: the hub and cross-game
 
 ## Product
 
-One private family game destination on the user's domain. The root page lets people choose a game, open its page and return to the hub. Android Chrome/PWA is the primary eventual client; desktop browsers are useful for development and play. Every user-facing surface is Ukrainian. The provisional platform name is Їжаклуб; the first game is Їжачі баталії. Names are configurable presentation choices, not architectural identifiers.
+One private family game destination on the user's domain. The root page lets people choose a game, open its page and return to the hub. Android Chrome/PWA is the primary eventual client; desktop browsers are useful for development and play. Every user-facing surface is Ukrainian. The platform name is Ігротека; the first game is Їжачі баталії. Names are configurable presentation choices, not architectural identifiers. The hub is neutral across games and occupies the viewport, with an internal game-list scroll only if the catalogue exceeds available space.
 
 First game: 2–4 separate players/devices, turn-based artillery, destructible terrain and a server run by the user. Later games get independent folders and routes; they should not require a rewrite of the hub or an external account system.
 
