@@ -23,8 +23,8 @@ Dependencies: FND-01–FND-06. Gate: SIM-A01–SIM-A06.
 - [x] SIM-01 — Add simulation workspace, serializable world state, seeded RNG, explicit units and fixed-step decision. Record map/tick budget measurements. SIM-A01/SIM-A06: `@yizhaklub/hedge-simulation` workspace added with 60 Hz converted units, Mulberry32 seeded RNG, RLE snapshot serialization/checksums and 2048x1024 budget tests (~14.2 ms full create+serialize+restore); see `tests/simulation.test.ts`.
 - [x] SIM-02 — Build initial mask loader and rectangle/chunk revision tracking. Add edge/size validation. SIM-A02: `loadTerrainMask` (raw/RGBA/shapes + indestructible borders), edge/size validation and 32×32 `recordDirtyChunks`/`consumeDirtyChunks` verified in `tests/simulation.test.ts`.
 - [x] SIM-03 — Port/adapt circular terrain edits with crater fixtures, boundary cases and provenance. SIM-A02: `carveCrater` ported from `uLandGraphics.pas` (`PORT-01` in `REUSE_PLAN.md`), verified with r=3 scanline fixture, indestructible preservation and boundary/off-map tests.
-- [~] SIM-04 — Add terrain/object collision and swept/substep projectile checks; verify narrow ledges and fast projectiles. (In progress: `2026-11-12-phase1-simulation`)
-- [ ] SIM-05 — Add character grounding, movement, jump, falling and drowning; keep rendering separate.
+- [x] SIM-04 — Add terrain/object collision and swept/substep projectile checks; verify narrow ledges and fast projectiles. SIM-A03: `testCollisionX`/`testCollisionY`, `testSegmentCircleIntersection` and `sweepProjectileStep` (`PORT-02`) prevent tunnelling across 1px horizontal ledges and 1px vertical walls at 30 wu/tick; see `tests/simulation.test.ts`.
+- [~] SIM-05 — Add character grounding, movement, jump, falling and drowning; keep rendering separate. (In progress: `2026-11-12-phase1-simulation`)
 - [ ] SIM-06 — Add impact rocket and timed bouncing grenade behavior, seeded wind, damage/knockback and settling.
 - [ ] SIM-07 — Validate representative trajectories, crater results, bounce/fuse timing, repeatability and serializable snapshots.
 

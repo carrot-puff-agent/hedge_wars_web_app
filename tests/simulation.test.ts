@@ -23,6 +23,10 @@ import {
   serializeWorldState,
   TERRAIN_INDESTRUCTIBLE,
   TERRAIN_SOLID,
+  testCollisionX,
+  testCollisionY,
+  testSegmentCircleIntersection,
+  sweepProjectileStep,
   TICKS_PER_SECOND,
   upstreamAccelToTick,
   upstreamVelocityToTick,
@@ -251,4 +255,73 @@ test('SIM-03: circular crater edits match Bresenham fixture, preserve indestruct
   const negativeRadius = carveCrater(terrain, 50, 50, -3);
   assert.equal(negativeRadius.changedCells, 0);
   assert.equal(terrain.revision, revBeforeOffMap);
+});
+
+test('SIM-04: terrain/object collision and swept/substep projectile checks prevent tunnelling on 1px ledges', () => {
+  const terrain = loadTerrainMask({
+    width: 256,
+    height: 256,
+    shapes: [
+      // 1-pixel thin horizontal ledge at y = 120, x = 40..200
+      { kind: 'rect', x: 40, y: 120, width: 160, height: 1, value: TERRAIN_SOLID },
+      // 1-pixel thin vertical wall at x = 180, y = 40..110
+      { kind: 'rect', x: 180, y: 40, width: 1, height: 70, value: TERRAIN_INDESTRUCTIBLE },
+    ],
+  });
+
+  // Directional edge collision queries at the 1px ledge
+  assert.equal(testCollisionY(terrain, 100, 111, 9, 1), TERRAIN_SOLID);
+  assert.equal(testCollisionY(terrain, 100, 110, 9, 1), 0);
+  assert.equal(testCollisionX(terrain, 171, 70, 9, 1), TERRAIN_INDESTRUCTIBLE);
+  assert.equal(testCollisionX(terrain, 170, 70, 9, 1), 0);
+
+  // Fast downward projectile (dy = +28 wu/tick, radius = 4) starting at y = 100 must NOT tunnel through y = 120
+  const verticalSweep = sweepProjectileStep({
+    terrain,
+    x: 100,
+    y: 100,
+    dx: 4,
+    dy: 28,
+    radius: 4,
+  });
+  assert.equal(verticalSweep.collided, true);
+  assert.equal(verticalSweep.hitY, true);
+  assert.equal(verticalSweep.terrainFlag, TERRAIN_SOLID);
+  assert.ok(verticalSweep.y <= 120, `Expected projectile to stop at or above ledge y=120, got y=${verticalSweep.y}`);
+
+  // Fast horizontal projectile (dx = +30 wu/tick, radius = 4) starting at x = 160 must NOT tunnel through 1px wall x = 180
+  const horizontalSweep = sweepProjectileStep({
+    terrain,
+    x: 160,
+    y: 70,
+    dx: 30,
+    dy: -2,
+    radius: 4,
+  });
+  assert.equal(horizontalSweep.collided, true);
+  assert.equal(horizontalSweep.hitX, true);
+  assert.equal(horizontalSweep.terrainFlag, TERRAIN_INDESTRUCTIBLE);
+  assert.ok(horizontalSweep.x <= 180, `Expected projectile to stop at or left of wall x=180, got x=${horizontalSweep.x}`);
+
+  // Swept projectile vs character collision (ignoring shooter until clear)
+  const shooter = createCharacterState({ id: 'h-shooter', teamId: 't1', name: 'Стрілець', x: 50, y: 60 });
+  const target = createCharacterState({ id: 'h-target', teamId: 't2', name: 'Ціль', x: 95, y: 60 });
+  const charSweep = sweepProjectileStep({
+    terrain,
+    characters: [shooter, target],
+    x: 50,
+    y: 60,
+    dx: 60,
+    dy: 0,
+    radius: 4,
+    ignoreCharacterId: 'h-shooter',
+  });
+  assert.equal(charSweep.collided, true);
+  assert.equal(charSweep.hitCharacterId, 'h-target');
+  assert.ok(charSweep.x < target.x);
+
+  // Analytic segment-circle intersection check
+  const segHit = testSegmentCircleIntersection(50, 60, 120, 60, 4, target);
+  assert.equal(segHit.hit, true);
+  assert.ok(Math.abs(segHit.hitX - (95 - (9 + 4))) < 1e-6);
 });
