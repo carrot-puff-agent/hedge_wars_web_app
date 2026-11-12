@@ -1,11 +1,12 @@
 # Current handoff — read before continuing
 
-Updated: 2026-11-12. Latest session: `2026-11-12-lxc-github`.
+Updated: 2026-11-12. Latest session: `2026-11-12-upstream-review`.
 
 ## Paths and starting commands
 
 - Primary root/Git/npm workspace: `/home/dev/games-web-app` on the LXC. Original VM checkout: `/home/coder/_PROJECTS/07_games_web_app`.
 - Game: `01_hedge_wars`; hub: `hub`; LXC remote: `git@github.com:carrot-puff-agent/hedge_wars_web_app.git`.
+- Official Hedgewars reference clone: `/home/dev/hedgewars-upstream`, separate from the app Git repository. Inspected commit `54437aa1a9078f77b0103f1df0aa81f4edc1be05`; see `REUSE_PLAN.md` for source, paths and import rules.
 - Read root and game AGENTS, then TECH_SPEC, CHECKLIST, ACCEPTANCE and latest session log.
 - Run `git status --short --branch` before changing files. Use `npm ci`, `npm run dev`, `npm run check`, `npm run test:e2e` from the root.
 
@@ -13,7 +14,7 @@ Updated: 2026-11-12. Latest session: `2026-11-12-lxc-github`.
 
 Local foundation is complete and verified. Hub/game preview and a typed hello are present. This is not playable multiplayer. Do not replace the acceptance/checklist with claims based on the workshop animation.
 
-Physics, terrain, weapon behavior, room/session lifecycle, reconnect and matches are unimplemented. A versioned PWA shell worker exists; match-aware updates and real Android installation remain unverified. The source checkout in the older project is reference-only and not a build dependency. No upstream material has been imported.
+Physics, terrain, weapon behavior, room/session lifecycle, reconnect and matches are unimplemented. A versioned PWA shell worker exists; the user confirmed Samsung installation, while match-aware updates remain unverified. The official upstream checkout is reference-only and not a build dependency. No upstream material has been imported.
 
 ## Decisions
 
@@ -32,10 +33,11 @@ Parent root is intentionally the Git root so hub and future games are versioned 
 - The hub is the neutral, full-viewport «Наші ігри» game chooser. The app icon is Google's Material `sports_esports` controller, filling 50% of its width; see `ASSET_REGISTER.md` and sessions `2026-11-12-hub-redesign.md` and `2026-11-12-app-rename.md`.
 - Known build note: the lazy-loaded Phaser preview chunk is about 1.20 MB / 320 KB gzip; map/device performance is not yet measured. Do not hide the warning by claiming an optimization.
 - SSH GitHub authentication as `carrot-puff-agent` and a normal LXC push succeeded. The key is configured in the LXC user's SSH config; do not read or display the private key. LXC Git repository has a local bot identity and `main` tracks `origin/main`. See `docs/sessions/2026-11-12-lxc-github.md`.
+- On 2026-11-12, `npm run check` passed and the production browser suite passed all 10 tests with user-local Chromium libraries. The LXC has no system Chromium and lacks some required browser libraries; see `docs/sessions/2026-11-12-upstream-review.md` for the reproducible local-library command. Android emulation does not verify real-device controls.
 
 ## Next actions
 
-Begin SIM-01 on the LXC: add the pure simulation workspace with serializable state, seeded RNG, units and an explicit timestep decision. Then implement mask terrain/collision work in dependency order. Review the checklist instead of rebuilding the foundation.
+Begin SIM-01 on the LXC: add the pure simulation workspace with serializable state, seeded RNG, units and an explicit timestep decision. Then implement mask terrain/collision work in dependency order. Review the official upstream files as references, and resolve the license/provenance gate before porting code or importing assets. Review the checklist instead of rebuilding the foundation.
 
 ## Processes
 

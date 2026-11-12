@@ -1,11 +1,15 @@
 # Hedgewars reuse plan and provenance
 
-Reference only: `/home/coder/_PROJECTS/06_warlings_remake/research/hw_android`, inspected commit `8fbcfe050e2eacdd947c4ba9262f93e57b4113cd`, upstream <https://github.com/Tokasur/hw_android>. This checkout is outside the new repository and must not be required to build the foundation. If unavailable, obtain a pinned reference clone under ignored `.local/references/`; do not vendor the entire project.
+Official upstream reference on the LXC: `/home/dev/hedgewars-upstream`, cloned from <https://github.com/hedgewars/hw.git>, the official Git mirror of <https://hg.hedgewars.org/hedgewars/>. The full Git clone was inspected at commit `54437aa1a9078f77b0103f1df0aa81f4edc1be05` on 2026-11-12. It is a separate sibling of the app repository, not a build dependency or part of the app's Git history; check its revision before recording an import. To recreate it on the LXC, run `git clone https://github.com/hedgewars/hw.git /home/dev/hedgewars-upstream`. Do not vendor the entire upstream project.
+
+An older Android-fork reference on the original VM is `/home/coder/_PROJECTS/06_warlings_remake/research/hw_android`, inspected at commit `8fbcfe050e2eacdd947c4ba9262f93e57b4113cd`, from <https://github.com/Tokasur/hw_android>. It is a separate, read-only project and is not required to build this app.
 
 Prior assessments, local context only:
 
 - `/home/coder/_PROJECTS/06_warlings_remake/HW_ANDROID_ASSESSMENT.md`
 - `/home/coder/_PROJECTS/06_warlings_remake/PWA_ARCHITECTURE_ASSESSMENT.md`
+
+The official checkout includes character/weapon graphics under `share/hedgewars/Data/Graphics/`, static maps under `Data/Maps/`, themes under `Data/Themes/`, sounds and voices under `Data/Sounds/`, and music under `Data/Music/`. Many map and theme folders include `credits.txt`. Review the actual files and their notices before selecting assets for import.
 
 ## Candidates
 
@@ -20,7 +24,7 @@ Prior assessments, local context only:
 | `hedgewars/uCommandHandlers.pas` | turn semantics | adapt into explicit server state machine |
 | `rust/land2d`, `landgen`, `integral-geometry` | isolated terrain/geometry helpers | investigate only if TypeScript profiling justifies another runtime boundary |
 
-Existing Hedgewars server relays commands and manages rooms; it is not the new authoritative physics service. Existing browser build flags and empty `project_files/web/pre.js` / `post.js` do not establish a working browser port. No reuse of the native engine is assumed.
+Existing Hedgewars server relays commands and manages rooms; it is not the new authoritative physics service. Upstream `CMakeLists.txt` exposes `BUILD_ENGINE_LIBRARY` and `BUILD_ENGINE_JS`; the latter uses a Pascal-to-C/Emscripten route, but `project_files/web/pre.js` and `post.js` are empty. No upstream engine build was attempted in this review, and these flags do not establish a working browser port or an authoritative server integration. The accepted design assumes selective TypeScript ports. If maximizing engine reuse warrants a bounded feasibility spike, compare integration and maintenance costs, browser/touch support, and server authority before changing that design; record any architecture change in a new ADR.
 
 ## Import procedure
 

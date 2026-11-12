@@ -56,5 +56,5 @@ npm start
 - [Agent instructions](AGENTS.md), [game instructions](01_hedge_wars/AGENTS.md), [handoff](01_hedge_wars/docs/HANDOFF.md).
 - [Operations](docs/OPERATIONS.md), [reuse plan](01_hedge_wars/docs/REUSE_PLAN.md) and [asset register](01_hedge_wars/docs/ASSET_REGISTER.md).
 
-No production domain, tunnel or VM service has been provisioned by this foundation. No Hedgewars code or art has been copied into the app. License selection and the first upstream imports have an explicit checklist gate.
+The dedicated LXC service is active and the user has configured an HTTPS domain; see the current status and operations runbook for verified details. The official Hedgewars source is available as a separate local reference at `/home/dev/hedgewars-upstream`; see the reuse plan. No Hedgewars code or art has been copied into the app. License selection and the first upstream imports have an explicit checklist gate.
 
