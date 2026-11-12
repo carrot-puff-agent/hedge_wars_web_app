@@ -3,7 +3,6 @@ import {
   DEFAULT_MAP_HEIGHT,
   DEFAULT_MAP_WIDTH,
   DEFAULT_TURN_TICKS,
-  DEFAULT_WATER_LINE,
   GRENADE_DEFAULT_FUSE_TICKS,
   HEDGEHOG_INITIAL_HEALTH,
   HEDGEHOG_RADIUS,
@@ -272,7 +271,7 @@ export function createCharacterState(params: {
 export function createWorldState(options: CreateWorldOptions): WorldState {
   const width = options.width ?? DEFAULT_MAP_WIDTH;
   const height = options.height ?? DEFAULT_MAP_HEIGHT;
-  const waterLine = options.waterLine ?? DEFAULT_WATER_LINE;
+  const waterLine = options.waterLine ?? height;
   validateMapDimensions(width, height, waterLine);
 
   const expectedCells = width * height;

@@ -40,9 +40,9 @@ No upstream code/assets have been imported at foundation creation. Original hub/
 
 | ID | Upstream commit/path/license | Destination | Changes/units | Verification |
 | --- | --- | --- | --- | --- |
-| — | No code imports yet | — | — | — |
+| PORT-01 | `54437aa1a9078f77b0103f1df0aa81f4edc1be05` · `hedgewars/uLandGraphics.pas` (`FillRoundInLand`, `FillCircleLines`, lines 319–375) · GPL-2.0 (`licenses/hedgewars-GPL-2.0.txt`) | `01_hedge_wars/packages/simulation/src/terrain.ts` (`carveCrater`, `applyBresenhamCircleToBuffer`) | Adapted Bresenham circle scanlines to 1-byte terrain mask (`0` empty, `1` solid, `2` indestructible), preserving `TERRAIN_INDESTRUCTIBLE` and tracking 32×32 dirty chunks + FNV-1a checksum | `tests/simulation.test.ts` (`SIM-03` r=3 row-width fixture `[3,5,7,7,7,5,3]=37`, indestructible strip preservation, edge/off-map boundaries) |
 
-License decision pending before first import. Expected direction is GPL-v2-compatible application code with separately tracked asset licenses; do not silently apply a permissive license to a port.
+License decision confirmed: GPL-2.0-compatible application code (`licenses/hedgewars-GPL-2.0.txt`) with separately tracked asset licenses in `ASSET_REGISTER.md`.
 
 Reference: [GNU FAQ on translated code](https://www.gnu.org/licenses/gpl-faq.en.html#TranslateCode).
 
