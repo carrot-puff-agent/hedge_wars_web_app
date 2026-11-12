@@ -26,6 +26,8 @@ Created platform/game specifications, 44-task ordered checklist, acceptance matr
 | `git diff --check` | PASS before commit | no whitespace errors |
 | Real Android, installed PWA, four-device match, Cloudflare route | NOT RUN | intentionally open later gates |
 | GitHub API access | FAIL | `gh repo view`: HTTP 401 Requires authentication; read-only Git access returned empty remote refs |
+| Local commit | PASS | foundation commit `33ac73b`; follow-up documentation commit records final handoff/blocker |
+| `GIT_TERMINAL_PROMPT=0 git push -u origin main` | BLOCKED | fatal: could not read Username for https://github.com; terminal prompts disabled. No write credentials available. |
 
 Two integration issues found and fixed: hub-to-game HMR needed a WebSocket-enabled proxy, otherwise the pending browser HMR handshake delayed the application's socket; Playwright needed graceful SIGTERM shutdown so the dev launcher could stop its owned child process groups. Final dev checks pass and leave no application listeners. Intermediate orphaned groups from the failed teardown were explicitly stopped.
 
@@ -33,7 +35,7 @@ Nonblocking observations: Vite reports the lazy Phaser preview chunk above its d
 
 ## Handoff
 
-- FND-01–FND-06 complete with local evidence. GitHub synchronization is being finalized as FND-07; do not infer push success from read access or the existence of the local workspace.
-- Git identity was absent. Bootstrap commits may use the explicit automated identity `Project bootstrap agent <bootstrap@local.invalid>` via per-command options, leaving global identity unchanged; this is not an invented user identity.
+- FND-01–FND-06 complete with local evidence. FND-07 is blocked on HTTPS Git authentication; no remote write occurred. After authentication is restored, run `git push -u origin main` and confirm remote HEAD matches local before marking it done.
+- Git identity was absent. Bootstrap commits used the explicit automated identity `Project bootstrap agent <bootstrap@local.invalid>` via per-command options, leaving global identity unchanged; this is not an invented user identity.
 - Next unblocked engineering task: SIM-01. Start by reading HANDOFF and specs; add the pure simulation package, not more workshop features.
 - Persistent services: none. Temporary app/test processes: stopped; ports verified closed.

@@ -12,7 +12,7 @@ Dependencies: none. Gate: FND-A01–FND-A07. Foundation does not imply a playabl
 - [x] FND-04 — Implement Ukrainian game chooser, real game route and accessible playful workshop preview. FND-A02/A03/A05: desktop/mobile browser checks and visual review passed.
 - [x] FND-05 — Implement validated hello protocol, health/catalogue endpoints and safe static routing. FND-A04: real-socket and HTTP tests passed, including rejection paths.
 - [x] FND-06 — Add CI, meaningful contract/server/browser smoke checks; run locally and record results. Two unit/integration tests and four browser tests in each of production/development modes passed. CI execution on GitHub is not yet observed.
-- [~] FND-07 — Commit foundation and verify remote synchronization. Read access works; API authentication failed. Local commit/push result being recorded in the foundation session.
+- [!] FND-07 — Local foundation commit `33ac73b` exists; GitHub synchronization is blocked by missing Git credentials. `git push -u origin main` failed: could not read Username for https://github.com (terminal prompts disabled). Restore VM authentication, then push normally. See foundation session log. FND-A07 blocker is explicit; remote synchronization is not claimed.
 
 ## Phase 1 — pure simulation and terrain
 

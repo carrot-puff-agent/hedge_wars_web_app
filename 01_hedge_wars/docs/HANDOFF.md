@@ -28,7 +28,8 @@ Parent root is intentionally the Git root so hub and future games are versioned 
 - Visual review: original Ukrainian desktop/mobile hub and workshop; screenshots under ignored `.local/screenshots/`.
 - No actual Android hardware, installed PWA, Cloudflare route or playable multiplayer has been tested.
 - Known build note: the lazy-loaded Phaser preview chunk is about 1.20 MB / 320 KB gzip; map/device performance is not yet measured. Do not hide the warning by claiming an optimization.
-- `gh repo view` returned HTTP 401. Read-only `git ls-remote` succeeded with an empty remote. Commit/push verification is the only foundation task still being finalized. No user Git identity was configured; an explicitly labelled automated local author may be used without changing global settings.
+- Foundation committed locally as `33ac73b`, followed by a documentation commit recording this handoff. GitHub push is blocked: `GIT_TERMINAL_PROMPT=0 git push -u origin main` failed with `could not read Username for 'https://github.com': terminal prompts disabled`. `gh repo view` also returned HTTP 401; read-only Git access worked with an empty remote. Restore GitHub authentication through the user/administrator, then run a normal push. No tokens were inspected or changed.
+- No user Git identity was configured. Bootstrap commits use the transparent automated author `Project bootstrap agent <bootstrap@local.invalid>` via per-command options. No global Git identity was changed.
 
 ## Next actions
 

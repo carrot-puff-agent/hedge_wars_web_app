@@ -8,7 +8,7 @@ Updated: 2026-11-12. Session: `2026-11-12-foundation`.
 - Local foundation complete: Ukrainian hub, Phaser workshop preview, versioned hello/API origin, build/test scripts and project documentation.
 - No playable match, multiplayer rooms, physics, terrain destruction, service-worker caching or verified PWA installation yet.
 - No live service/tunnel/domain provisioned. No upstream Hedgewars code/art imported.
-- Git remote configured for the supplied GitHub repository. API authentication reported HTTP 401 during setup; Git synchronization is recorded separately in the handoff/session log.
+- Git remote configured for the supplied GitHub repository; foundation committed locally (`33ac73b`, with a follow-up documentation commit). GitHub push is blocked: no HTTPS Git credentials; `gh` API authentication also returned HTTP 401. Remote synchronization and hosted CI are not claimed.
 
 Verification: clean `npm ci`; `npm run check` passed (strict types, two unit/network tests, documentation integrity and all three builds); `npm run test:e2e` passed four desktop/mobile-emulation tests; `npm run test:dev` passed the same four checks through development proxies. Desktop/mobile screenshots were visually reviewed. No actual Android hardware tested. All temporary listeners on 5173/5174/8787/8790 were confirmed closed after verification.
 
