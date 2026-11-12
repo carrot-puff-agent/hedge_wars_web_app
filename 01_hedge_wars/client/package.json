@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "scripts": { "dev": "vite", "build": "vite build" },
-  "dependencies": { "@yizhaklub/hedge-protocol": "0.1.0", "phaser": "3.90.0" }
+  "dependencies": { "@yizhaklub/hedge-protocol": "0.1.0", "@yizhaklub/hedge-simulation": "0.1.0", "phaser": "3.90.0" }
 }

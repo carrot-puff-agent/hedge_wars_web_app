@@ -1,6 +1,6 @@
 # Ordered implementation checklist
 
-Canonical task list. `[ ]` TODO · `[~]` IN PROGRESS · `[x]` DONE · `[!]` BLOCKED. Stable IDs are referenced in acceptance criteria and session logs. Mark done with evidence; leave manual gates open. Current session: `2026-11-12-foundation`.
+Canonical task list. `[ ]` TODO · `[~]` IN PROGRESS · `[x]` DONE · `[!]` BLOCKED. Stable IDs are referenced in acceptance criteria and session logs. Mark done with evidence; leave manual gates open. Current session: `2026-11-12-phase1-simulation`.
 
 ## Phase 0 — reproducible project foundation
 
@@ -20,8 +20,8 @@ Dependencies: none. Gate: FND-A01–FND-A07. Foundation does not imply a playabl
 
 Dependencies: FND-01–FND-06. Gate: SIM-A01–SIM-A06.
 
-- [ ] SIM-01 — Add simulation workspace, serializable world state, seeded RNG, explicit units and fixed-step decision. Record map/tick budget measurements.
-- [ ] SIM-02 — Build initial mask loader and rectangle/chunk revision tracking. Add edge/size validation.
+- [x] SIM-01 — Add simulation workspace, serializable world state, seeded RNG, explicit units and fixed-step decision. Record map/tick budget measurements. SIM-A01/SIM-A06: `@yizhaklub/hedge-simulation` workspace added with 60 Hz converted units, Mulberry32 seeded RNG, RLE snapshot serialization/checksums and 2048x1024 budget tests (~14.2 ms full create+serialize+restore); see `tests/simulation.test.ts`.
+- [~] SIM-02 — Build initial mask loader and rectangle/chunk revision tracking. Add edge/size validation. (In progress: `2026-11-12-phase1-simulation`)
 - [ ] SIM-03 — Port/adapt circular terrain edits with crater fixtures, boundary cases and provenance.
 - [ ] SIM-04 — Add terrain/object collision and swept/substep projectile checks; verify narrow ledges and fast projectiles.
 - [ ] SIM-05 — Add character grounding, movement, jump, falling and drowning; keep rendering separate.
