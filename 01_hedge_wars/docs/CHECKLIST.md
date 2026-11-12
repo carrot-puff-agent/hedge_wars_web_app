@@ -25,8 +25,8 @@ Dependencies: FND-01–FND-06. Gate: SIM-A01–SIM-A06.
 - [x] SIM-03 — Port/adapt circular terrain edits with crater fixtures, boundary cases and provenance. SIM-A02: `carveCrater` ported from `uLandGraphics.pas` (`PORT-01` in `REUSE_PLAN.md`), verified with r=3 scanline fixture, indestructible preservation and boundary/off-map tests.
 - [x] SIM-04 — Add terrain/object collision and swept/substep projectile checks; verify narrow ledges and fast projectiles. SIM-A03: `testCollisionX`/`testCollisionY`, `testSegmentCircleIntersection` and `sweepProjectileStep` (`PORT-02`) prevent tunnelling across 1px horizontal ledges and 1px vertical walls at 30 wu/tick; see `tests/simulation.test.ts`.
 - [x] SIM-05 — Add character grounding, movement, jump, falling and drowning; keep rendering separate. SIM-A04: `character.ts` (`PORT-03`) implements 6px slope climb/descent, long/high jumps, removed-support falling, fall damage and water drowning; verified in `tests/simulation.test.ts`.
-- [~] SIM-06 — Add impact rocket and timed bouncing grenade behavior, seeded wind, damage/knockback and settling. (In progress: `2026-11-12-phase1-simulation`)
-- [ ] SIM-07 — Validate representative trajectories, crater results, bounce/fuse timing, repeatability and serializable snapshots.
+- [x] SIM-06 — Add impact rocket and timed bouncing grenade behavior, seeded wind, damage/knockback and settling. SIM-A03/SIM-A05: `weapons.ts` and `world.ts` (`PORT-04`) implement wind-affected impact rockets, timed bouncing grenades, radial damage/knockback, crater carving and deterministic settling; see `tests/simulation.test.ts`.
+- [x] SIM-07 — Validate representative trajectories, crater results, bounce/fuse timing, repeatability and serializable snapshots. SIM-A01–SIM-A06: verified deterministic replay repeatability, mid-flight snapshot restore continuity, cosmetic RNG isolation and 2048×1024 12-character active-tick budget (~0.08 ms/tick vs 16.67 ms 60 Hz limit) in `tests/simulation.test.ts`.
 
 ## Phase 2 — two devices, then four devices
 

@@ -20,12 +20,13 @@ import {
   MAX_LAUNCH_SPEED_PER_TICK,
   MAX_WIND_ACCEL_PER_TICK,
   MS_PER_TICK,
-  refreshCharacterGrounding,
+   refreshCharacterGrounding,
   rollSeededWind,
   SeededRng,
   serializeWorldState,
   startCharacterJump,
   stepCharacterPhysics,
+  stepWorld,
   TERRAIN_INDESTRUCTIBLE,
   TERRAIN_SOLID,
   testCollisionX,
@@ -33,6 +34,7 @@ import {
   testSegmentCircleIntersection,
   sweepProjectileStep,
   TICKS_PER_SECOND,
+  triggerExplosion,
   upstreamAccelToTick,
   upstreamVelocityToTick,
 } from '../01_hedge_wars/packages/simulation/src/index';
@@ -400,4 +402,206 @@ test('SIM-05: character grounding, slope movement, jump, removed support, fall d
   assert.ok(events.some((e) => e.type === 'character.drowned'));
   assert.ok(events.some((e) => e.type === 'character.eliminated' && e.cause === 'water'));
   assert.ok(computeFallDamage(10) > 0);
+});
+
+test('SIM-06: impact rocket with wind, timed bouncing grenade, radial damage/knockback and settling', () => {
+  const terrain = loadTerrainMask({
+    width: 512,
+    height: 320,
+    waterLine: 300,
+    shapes: [
+      { kind: 'rect', x: 20, y: 200, width: 472, height: 90, value: TERRAIN_SOLID },
+    ],
+  });
+
+  const teams = [
+    { id: 't1', name: 'Колючки', colorIndex: 0, inventory: { rocket: 5, grenade: 5 } },
+    { id: 't2', name: 'Каштани', colorIndex: 1, inventory: { rocket: 5, grenade: 5 } },
+  ];
+  const c1 = createCharacterState({ id: 'c1', teamId: 't1', name: 'Стрілець', x: 100, y: 191, facing: 1 });
+  const c2 = createCharacterState({ id: 'c2', teamId: 't2', name: 'Мішень', x: 250, y: 191, facing: -1 });
+  refreshCharacterGrounding(terrain, c1, 2);
+  refreshCharacterGrounding(terrain, c2, 2);
+
+  const world = createWorldState({
+    seed: 'sim-06-weapons',
+    width: 512,
+    height: 320,
+    waterLine: 300,
+    mask: terrain.mask,
+    teams,
+    characters: [c1, c2],
+  });
+
+  // 1. Roll seeded wind and fire an impact rocket toward c2
+  const allEvents: import('../01_hedge_wars/packages/simulation/src/index').SimulationEvent[] = [];
+  allEvents.push(
+    ...stepWorld(world, [
+      { type: 'rollWind' },
+      { type: 'selectWeapon', characterId: 'c1', weapon: 'rocket' },
+      { type: 'aim', characterId: 'c1', angleDeg: 35, facing: 1 },
+      { type: 'fire', characterId: 'c1', power: 360 },
+    ]),
+  );
+  assert.notEqual(world.wind, 0, 'Seeded wind should be non-zero');
+  assert.equal(world.teams[0]!.inventory.rocket, 4);
+  assert.equal(world.projectiles.length, 1);
+
+  for (let i = 0; i < 180; i++) {
+    allEvents.push(...stepWorld(world));
+    if (world.phase === 'control' || world.phase === 'finished') break;
+  }
+
+  const rocketExplosion = allEvents.find((e) => e.type === 'explosion');
+  assert.ok(rocketExplosion && rocketExplosion.type === 'explosion', 'Rocket must detonate on impact');
+  assert.ok(rocketExplosion.clearedCells > 0, 'Rocket explosion must carve terrain crater');
+  assert.equal(world.terrain.revision, 1);
+  assert.ok(allEvents.some((e) => e.type === 'world.settled'), 'World must settle after rocket explosion');
+
+  // 2. Timed bouncing grenade: bounces on floor and only explodes when fuse expires (90 ticks = 1.5s)
+  const grenadeEvents: import('../01_hedge_wars/packages/simulation/src/index').SimulationEvent[] = [];
+  const fuseTicks = 90;
+  const fireTick = world.tick + 1;
+  grenadeEvents.push(
+    ...stepWorld(world, [
+      { type: 'selectWeapon', characterId: 'c1', weapon: 'grenade', grenadeFuseTicks: fuseTicks },
+      { type: 'aim', characterId: 'c1', angleDeg: 25, facing: 1 },
+      { type: 'fire', characterId: 'c1', power: 450 },
+    ]),
+  );
+  assert.equal(world.teams[0]!.inventory.grenade, 4);
+
+  for (let i = 0; i < 180; i++) {
+    grenadeEvents.push(...stepWorld(world));
+    if (world.phase === 'control' || world.phase === 'finished') break;
+  }
+
+  const bounces = grenadeEvents.filter((e) => e.type === 'projectile.bounced');
+  assert.ok(bounces.length >= 1, 'Grenade should bounce at least once before fuse expires');
+  const grenadeExplosion = grenadeEvents.find((e) => e.type === 'explosion');
+  assert.ok(grenadeExplosion && grenadeExplosion.type === 'explosion', 'Grenade must detonate when fuse reaches 0');
+  // Fuse decrements 1 on spawn tick + (fuseTicks - 1) subsequent ticks -> explodes at fireTick + fuseTicks - 1
+  assert.equal(grenadeExplosion.tick, fireTick + fuseTicks - 1);
+
+  // 3. Direct radial damage/knockback and elimination order check
+  const targetA = world.characters[0]!;
+  const targetB = world.characters[1]!;
+  targetA.x = 350;
+  targetA.y = 180;
+  targetA.health = 20;
+  targetB.x = 360;
+  targetB.y = 180;
+  targetB.health = 100;
+  const chainEvents: import('../01_hedge_wars/packages/simulation/src/index').SimulationEvent[] = [];
+  triggerExplosion(world, 352, 185, 50, 't2', chainEvents);
+  assert.equal(targetA.alive, false, 'Low-health character in blast radius must be eliminated');
+  assert.ok(targetB.health < 100 && targetB.alive, 'Nearby character takes radial damage');
+  assert.ok(targetB.vx > 0 && targetB.vy < 0, 'Radial knockback pushes targetB right and upward');
+});
+
+test('SIM-07: deterministic replay repeatability, mid-flight snapshot continuity and 2048x1024 tick benchmark', () => {
+  function buildScenarioWorld() {
+    const terrain = loadTerrainMask({
+      width: DEFAULT_MAP_WIDTH,
+      height: DEFAULT_MAP_HEIGHT,
+      waterLine: 980,
+      indestructibleBorder: 6,
+      shapes: [
+        { kind: 'rect', x: 100, y: 600, width: 1848, height: 350, value: TERRAIN_SOLID },
+        { kind: 'circle', x: 700, y: 580, radius: 60, value: TERRAIN_SOLID },
+        { kind: 'circle', x: 1300, y: 580, radius: 60, value: TERRAIN_SOLID },
+      ],
+    });
+    const teams = [
+      { id: 't1', name: 'Колючки', colorIndex: 0, inventory: { rocket: 10, grenade: 10 } },
+      { id: 't2', name: 'Каштани', colorIndex: 1, inventory: { rocket: 10, grenade: 10 } },
+      { id: 't3', name: 'Жолуді', colorIndex: 2, inventory: { rocket: 10, grenade: 10 } },
+      { id: 't4', name: 'Шишки', colorIndex: 3, inventory: { rocket: 10, grenade: 10 } },
+    ];
+    const characters = teams.flatMap((team, tIdx) =>
+      [0, 1, 2].map((cIdx) => {
+        const ch = createCharacterState({
+          id: `${team.id}-h${cIdx + 1}`,
+          teamId: team.id,
+          name: `${team.name} ${cIdx + 1}`,
+          x: 240 + tIdx * 420 + cIdx * 70,
+          y: 591,
+          facing: tIdx < 2 ? 1 : -1,
+        });
+        refreshCharacterGrounding(terrain, ch, 4);
+        return ch;
+      }),
+    );
+    return createWorldState({
+      seed: 'sim-07-repeatability-seed',
+      width: DEFAULT_MAP_WIDTH,
+      height: DEFAULT_MAP_HEIGHT,
+      waterLine: 980,
+      mask: terrain.mask,
+      teams,
+      characters,
+    });
+  }
+
+  const schedule = new Map<number, import('../01_hedge_wars/packages/simulation/src/index').SimulationCommand[]>([
+    [1, [{ type: 'rollWind' }, { type: 'move', characterId: 't1-h1', direction: 1 }]],
+    [15, [{ type: 'move', characterId: 't1-h1', direction: 0 }, { type: 'jump', characterId: 't1-h1', kind: 'long' }]],
+    [55, [
+      { type: 'selectWeapon', characterId: 't1-h1', weapon: 'grenade', grenadeFuseTicks: 75 },
+      { type: 'aim', characterId: 't1-h1', angleDeg: 40, facing: 1 },
+      { type: 'fire', characterId: 't1-h1', power: 950 },
+    ]],
+  ]);
+
+  const worldA = buildScenarioWorld();
+  const worldB = buildScenarioWorld();
+  let midFlightSnapshot: ReturnType<typeof serializeWorldState> | null = null;
+
+  const eventsA: import('../01_hedge_wars/packages/simulation/src/index').SimulationEvent[] = [];
+  const eventsB: import('../01_hedge_wars/packages/simulation/src/index').SimulationEvent[] = [];
+
+  const tStart = performance.now();
+  const totalTicks = 200;
+  for (let tick = 1; tick <= totalTicks; tick++) {
+    const cmds = schedule.get(tick) ?? [];
+    eventsA.push(...stepWorld(worldA, cmds));
+    eventsB.push(...stepWorld(worldB, cmds));
+
+    // Forking cosmetic RNG on worldA must never diverge worldA from worldB
+    if (tick % 10 === 0) {
+      const cosmetic = SeededRng.fromState(worldA.rngState).forkCosmetic(tick);
+      cosmetic.nextUint32();
+    }
+
+    if (tick === 80) {
+      // Take snapshot while grenade is mid-flight/bouncing
+      assert.equal(worldA.projectiles.length, 1);
+      midFlightSnapshot = serializeWorldState(worldA);
+    }
+  }
+  const elapsedMs = performance.now() - tStart;
+  const avgMsPerTick = elapsedMs / (totalTicks * 2);
+
+  // Repeatability: worldA and worldB must converge to identical state and events
+  assert.equal(computeWorldChecksum(worldA), computeWorldChecksum(worldB));
+  assert.equal(worldA.terrain.checksum, worldB.terrain.checksum);
+  assert.equal(worldA.terrain.revision, worldB.terrain.revision);
+  assert.deepEqual(eventsA, eventsB);
+
+  // Snapshot continuity: restore from tick 80 and run ticks 81..200
+  assert.ok(midFlightSnapshot !== null);
+  const worldRestored = deserializeWorldState(midFlightSnapshot);
+  for (let tick = 81; tick <= totalTicks; tick++) {
+    const cmds = schedule.get(tick) ?? [];
+    stepWorld(worldRestored, cmds);
+  }
+  assert.equal(computeWorldChecksum(worldRestored), computeWorldChecksum(worldA));
+  assert.equal(worldRestored.terrain.checksum, worldA.terrain.checksum);
+  assert.deepEqual(worldRestored.characters, worldA.characters);
+
+  // Performance budget: 2048x1024 map with 12 characters + projectile + crater explosion well under 16.67ms/tick
+  assert.ok(
+    avgMsPerTick < 5.0,
+    `Expected average tick < 5.0ms (60Hz budget is 16.67ms), got ${avgMsPerTick.toFixed(3)}ms`,
+  );
 });

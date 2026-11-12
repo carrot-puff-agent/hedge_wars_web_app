@@ -3,20 +3,18 @@
 Pure, deterministic, serializable simulation package for **Їжачі баталії** (Hedge Wars).
 Contains zero DOM, Phaser, WebSocket, or wall-clock (`Date.now()` / `Math.random()`) dependencies.
 
-## Units and Fixed-Step Decision (`SIM-01`)
+## Modules (`SIM-01`–`SIM-07`)
 
-- **Spatial unit**: `1 world unit (wu) = 1 terrain mask cell` on the baseline `2048x1024` grid (`2,097,152` bytes, 1 byte per cell: `0` = empty, `1` = solid destructible, `2` = solid indestructible).
-- **Coordinate system**: `(0, 0)` is the top-left corner of the map; `+X` points right, `+Y` points down; default `waterLine = 1024`.
-- **Fixed timestep**: `TICKS_PER_SECOND = 60` (`dt = 16.6667 ms`, `SIMULATION_RULES_VERSION = 1`).
-- **Conversion from upstream Hedgewars (`1000 Hz` / `1 ms` ticks)**:
-  - `MS_PER_TICK = 1000 / 60 = 50 / 3`
-  - Velocity (`wu/tick`): `v_tick = v_upstream_ms * (1000 / 60)`
-  - Acceleration (`wu/tick²`): `a_tick = a_upstream_ms2 * (1000 / 60)^2`
-  - Key converted values:
-    - Gravity (`cGravity = 0.0005 wu/ms²`): `5 / 36 ≈ 0.138889 wu/tick²` (`500 wu/s²`)
-    - Max wind acceleration (`cMaxWindSpeed = 0.00025 wu/ms²`): `5 / 72 ≈ 0.069444 wu/tick²` (`250 wu/s²`)
-    - Drowning sink speed (`cDrownSpeed = 0.06 wu/ms`): `1.0 wu/tick` (`60 wu/s`)
-    - Max launch speed (`1.0 wu/ms`): `50 / 3 ≈ 16.6667 wu/tick` (`1000 wu/s`)
-    - Hedgehog radius: `9 wu`; rocket radius: `4 wu` (`boom = 50 wu`); grenade radius: `5 wu` (`boom = 50 wu`, default fuse `180` ticks = `3 s`).
-- **Measured `2048x1024` baseline budget (Node 20.19.2 on LXC)**:
-  - Full `createWorldState` + RLE `serializeWorldState` + `deserializeWorldState` + FNV-1a checksum validation (12 characters across 4 teams on `2048x1024` terrain): `~14.2 ms` total (well within snapshot/join budget; per-tick simulation step measured in `SIM-07`).
+- `src/units.ts` — Explicit spatial/time units (`1 wu = 1 terrain cell`, `60 Hz` fixed step) and conversion functions from upstream Hedgewars (`1000 Hz` / `1 ms` ticks).
+- `src/rng.ts` — Deterministic 32-bit Mulberry32 PRNG (`SeededRng`) with non-mutating cosmetic RNG fork (`forkCosmetic`).
+- `src/state.ts` — Serializable `WorldState`, RLE terrain mask snapshot encoding (`encodeMaskRle` / `decodeMaskRle`), FNV-1a checksums (`computeMaskChecksum`, `computeWorldChecksum`).
+- `src/terrain.ts` — Initial mask loader (`loadTerrainMask` for raw bytes, RGBA, declarative shapes and indestructible borders), 32×32 dirty chunk revision tracking (`recordDirtyChunks`, `consumeDirtyChunks`) and Bresenham circular crater carving (`carveCrater`, `PORT-01`).
+- `src/collision.ts` — Directional edge collision probes (`testCollisionX`, `testCollisionY`), circle/segment intersections and sub-pixel swept projectile movement (`sweepProjectileStep`, `PORT-02`).
+- `src/character.ts` — Grounding, 6px slope climb/descent walking, long/high jumps, wall unsticking, 60 Hz converted fall damage and water drowning (`PORT-03`).
+- `src/weapons.ts` — Impact rocket (`rocket`) with wind drift, timed bouncing grenade (`grenade`), radial explosion damage and knockback (`triggerExplosion`, `PORT-04`).
+- `src/world.ts` — Fixed-step world runner (`stepWorld`), command application (`applySimulationCommand`) and settling/elimination checks (`isWorldSettled`).
+
+## Measured `2048x1024` Performance Budget (`SIM-01`, `SIM-07`)
+
+- Full `createWorldState` + RLE `serializeWorldState` + `deserializeWorldState` + FNV-1a checksum validation (12 characters across 4 teams on `2048x1024` terrain): `~14–22 ms` total.
+- Active 60 Hz simulation step (`stepWorld` across 200 ticks with 12 characters, bouncing grenade, explosion crater and settling on `2048x1024` terrain): `~0.08 ms/tick` average (`< 0.5%` of the `16.67 ms` 60 Hz server tick budget).
