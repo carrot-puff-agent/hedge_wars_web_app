@@ -112,6 +112,14 @@ export function stepWorld(
     stepCharacterPhysics(state.terrain, ch, state.tick, events, canControlWalk);
   }
 
+  if (state.phase === 'control' && state.activeCharacterId) {
+    const activeChar = state.characters.find((c) => c.id === state.activeCharacterId);
+    if (!activeChar || !activeChar.alive || activeChar.drowning) {
+      if (activeChar) activeChar.moveInput = 0;
+      state.phase = 'resolve';
+    }
+  }
+
   if (state.phase === 'resolve' && state.projectiles.length === 0) {
     state.phase = 'settle';
   }

@@ -28,7 +28,7 @@ socket.addEventListener('message', (event: MessageEvent<string>) => {
     if (!parsed.success) return;
     clearTimeout(timeout);
     if (parsed.data.type === 'server.hello') { connected = true; status.textContent = 'Майстерня відчинена. Їжачок чекає на привіт!'; }
-    else status.textContent = parsed.data.code === 'PROTOCOL_MISMATCH' ? 'Є новіша версія майстерні. Онови сторінку, будь ласка.' : 'Не вдалося привітатися. Спробуй оновити сторінку.';
+    else if (parsed.data.type === 'server.error') status.textContent = parsed.data.code === 'PROTOCOL_MISMATCH' ? 'Є новіша версія майстерні. Онови сторінку, будь ласка.' : 'Не вдалося привітатися. Спробуй оновити сторінку.';
   } catch { status.textContent = 'Щось завадило привітанню. Спробуй оновити сторінку.'; }
 });
 socket.addEventListener('close', () => { clearTimeout(timeout); if (connected) status.textContent = 'Зв’язок із майстернею перервався. Їжачок усе одно радий тобі!'; });

@@ -6,3 +6,4 @@ export * from './collision';
 export * from './character';
 export * from './weapons';
 export * from './world';
+export * from './maps';
