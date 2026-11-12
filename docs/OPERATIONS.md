@@ -1,6 +1,6 @@
 # Development and operations runbook
 
-Repository root: `/home/coder/_PROJECTS/07_games_web_app`. The foundation is deployed on the dedicated Debian LXC; the user manages the domain and Cloudflare Tunnel. Current hello endpoint has no sessions/rooms; complete NET-08 before exposing gameplay publicly.
+Repository root: `/home/dev/games-web-app` on the primary development LXC; `/home/coder/_PROJECTS/07_games_web_app` on the original VM. The user manages the domain and Cloudflare Tunnel. Current hello endpoint has no sessions/rooms; complete NET-08 before exposing gameplay publicly.
 
 ## Dedicated LXC deployment
 
@@ -11,7 +11,7 @@ Repository root: `/home/coder/_PROJECTS/07_games_web_app`. The foundation is dep
 - Manage on the LXC: `sudo systemctl status yizhaklub`, `sudo systemctl restart yizhaklub`, `sudo systemctl stop yizhaklub`; logs: `journalctl -u yizhaklub -n 100 --no-pager`.
 - Verification after restart: `systemctl is-enabled yizhaklub`, `systemctl is-active yizhaklub`, then request `/api/health`, `/`, `/games/hedge-wars/`, `/manifest.webmanifest`, `/sw.js` and test `/ws`.
 
-This is a snapshot, not an automatic synchronization service. For subsequent approved deploys, mirror the source from the repository root without `.git`, `node_modules`, any `dist`, `.local`, test artifacts, `LXC_details.txt`, or `.env*`. Then on the LXC run `cd /home/dev/games-web-app && npm ci && npm run check && sudo systemctl restart yizhaklub`. Back up a known-good release before deploying changes; rollback has not yet been rehearsed. The LXC is a separate Debian host and uses systemd; the original VM's `agent-service` rules remain applicable to services on that VM.
+The LXC is the primary Git checkout, not a passive mirror. Develop and push from `/home/dev/games-web-app`. Do not mirror an older VM checkout over LXC work. After approved changes, run `npm ci` if dependencies changed, `npm run check`, relevant browser checks, and `npm run build`; static output is served from the checkout. Restart `yizhaklub.service` when server code changes. Back up a known-good release before deploying changes; rollback has not yet been rehearsed. The LXC is a separate Debian host and uses systemd; the original VM's `agent-service` rules remain applicable to services on that VM.
 
 HTTPS on the final Cloudflare hostname is required for Chrome's PWA features. The initial shell caches both routes and built assets; API/WebSocket traffic always requires the server. A new worker waits for existing controlled pages to close. Match-aware update prompts, real Android installation and HTTPS tunnel testing remain open.
 
@@ -85,7 +85,7 @@ Cloudflare Tunnel can map the chosen domain to `http://127.0.0.1:8787`. Regular 
 
 ## GitHub synchronization
 
-Remote: `https://github.com/carrot-puff-agent/hedge_wars_web_app`. Clone/read access may work even when `gh` API authentication fails. Never read token stores to diagnose it, change remote visibility, overwrite remote history or change global Git identity.
+The LXC checkout uses `git@github.com:carrot-puff-agent/hedge_wars_web_app.git`. SSH is configured for the `carrot-puff-agent` account using the dedicated key at `~/.ssh/codex_github_ed25519` and the verified GitHub host key. Git has a repository-local bot identity; global identity is unchanged. Never print/read private key contents or put them in the repository, backups or logs.
 
-Inspect `git status`, `git log -1` and `git ls-remote origin`. Push normal commits with `git push -u origin main` when credentials permit. If authentication/identity is unavailable, retain local files/commit where possible and record the exact redacted failure in HANDOFF. The user/administrator can restore authentication or supply the desired commit identity; do not invent the user's identity.
+From `/home/dev/games-web-app`, inspect `git status --short --branch`, then use normal `git pull --ff-only` and `git push` as appropriate. `ssh -T git@github.com` prints a successful authentication message but intentionally exits 1 because GitHub does not offer a shell. Do not force-push, change remote visibility, or overwrite uncommitted work. If authentication fails, record the redacted error and ask the administrator to repair access; do not inspect token stores.
 

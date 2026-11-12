@@ -2,11 +2,12 @@
 
 ## Authority and boundaries
 
-- Repository root: `/home/coder/_PROJECTS/07_games_web_app`.
-- Remote: `https://github.com/carrot-puff-agent/hedge_wars_web_app`.
+- Repository root: `/home/dev/games-web-app` on the development LXC (`game-hub`); `/home/coder/_PROJECTS/07_games_web_app` on the original VM. In either location, use `git rev-parse --show-toplevel` to locate it.
+- GitHub remote on the LXC: `git@github.com:carrot-puff-agent/hedge_wars_web_app.git`.
 - Hub source: `hub/`. Hedge Wars source, implementation plan and game documents: `01_hedge_wars/`.
 - One Git repository at the parent root. Do not initialize a nested repository or move game code into the hub.
-- Read `/home/coder/_notes_to_agent/basic_deployment_notes_for_ai_agent.md` on this VM. Its service/package conventions apply. Never read or alter `.secrets`.
+- On the original VM, read `/home/coder/_notes_to_agent/basic_deployment_notes_for_ai_agent.md`; its service/package conventions apply there. On the LXC, use the systemd service and Debian package conventions documented in `docs/OPERATIONS.md`. Never read or alter `.secrets`.
+- On the LXC the GitHub key is configured through `~/.ssh/config`; use normal Git commands. Never print, commit or copy private keys or credentials. The LXC is now the primary development checkout: inspect its status before edits, and never overwrite it from the original VM without checking for new work.
 - Other projects are read-only references unless the user explicitly expands scope. In particular, do not modify `06_warlings_remake` or its Hedgewars checkout.
 - Follow the user's current instructions first. Do not infer permission to contact people, change domain/DNS settings, or publish a live service from routine development work.
 
@@ -35,7 +36,7 @@
 - Add assets only with recorded origin/license in `01_hedge_wars/docs/ASSET_REGISTER.md`. A translation of upstream code is still a port; record it in the reuse register.
 - Generated builds, dependencies, runtime logs, screenshots and local experiments belong in ignored `dist/`, `node_modules/`, `.local/`, `test-results/` or `playwright-report/`. Durable evidence should be summarized in versioned Markdown.
 - Never commit tokens, environment files, access cookies, private room credentials or personal player data. Do not copy secrets into logs.
-- Use `sudo agent-apt` for system packages and `sudo agent-service` with launchers in `~/.config/agent-services/` for persistent VM services. Ordinary development processes may run in a terminal and must be stopped when finished.
+- On the original VM use `sudo agent-apt` for system packages and `sudo agent-service` with launchers in `~/.config/agent-services/` for persistent services. The separate LXC uses Debian package management and the existing `yizhaklub.service` systemd unit. Ordinary development processes may run in a terminal and must be stopped when finished.
 - Do not change Git global identity, remote repository visibility, authentication configuration or unrelated services. Never force-push or discard existing work.
 
 ## Checks and evidence

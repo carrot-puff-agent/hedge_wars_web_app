@@ -1,6 +1,6 @@
 # Hedge Wars agent instructions
 
-Read and follow `../AGENTS.md` first. Game root: `/home/coder/_PROJECTS/07_games_web_app/01_hedge_wars`. Git commands run from the parent repository root.
+Read and follow `../AGENTS.md` first. Game root is `01_hedge_wars/` under the repository root: `/home/dev/games-web-app/01_hedge_wars` on the LXC, or `/home/coder/_PROJECTS/07_games_web_app/01_hedge_wars` on the original VM. Git commands run from the parent repository root.
 
 ## Required context
 

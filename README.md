@@ -21,14 +21,15 @@ This repository currently provides a runnable hub, a Phaser workshop preview, a 
     docs/                         # technical spec, checklist, acceptance, handoff, logs
 ```
 
-Remote: <https://github.com/carrot-puff-agent/hedge_wars_web_app>. The parent is intentionally the repository root so a fresh clone includes the landing page and future games. All Hedge Wars implementation stays under `01_hedge_wars`. See ADR 0001.
+Remote: <https://github.com/carrot-puff-agent/hedge_wars_web_app>. The LXC's primary development checkout is `/home/dev/games-web-app`, with SSH GitHub access configured. The parent is intentionally the repository root so a fresh clone includes the landing page and future games. All Hedge Wars implementation stays under `01_hedge_wars`. See ADR 0001.
 
 ## Run locally
 
 Use Node 22.12+ (Node 22 is selected in `.nvmrc`) and npm. The current VM's Node 20.19.2 is also accepted by the pinned tools; CI uses Node 22. No database, Cloudflare account or native Android SDK is needed locally.
 
 ```sh
-cd /home/coder/_PROJECTS/07_games_web_app
+# LXC; on the original VM use /home/coder/_PROJECTS/07_games_web_app
+cd /home/dev/games-web-app
 npm ci
 npm run dev
 ```
