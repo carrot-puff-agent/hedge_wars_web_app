@@ -1,0 +1,11 @@
+:root {
+  --paper: #f9f5e9;
+  --ink: #233d32;
+  --green: #225b43;
+  --orange: #db814c;
+  --yellow: #edce70;
+  --blue: #326a85;
+  --muted: #5b685d;
+  --line: #d9ddcd;
+  --font: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+}

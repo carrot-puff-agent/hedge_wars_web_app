@@ -1,0 +1,8 @@
+{
+  "name": "@yizhaklub/hedge-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build" },
+  "dependencies": { "@yizhaklub/hedge-protocol": "0.1.0", "phaser": "3.90.0" }
+}

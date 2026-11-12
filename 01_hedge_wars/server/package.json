@@ -1,0 +1,11 @@
+{
+  "name": "@yizhaklub/hedge-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20.19 --external:ws --outfile=dist/index.js"
+  },
+  "dependencies": { "@yizhaklub/hedge-protocol": "0.1.0", "ws": "8.22.2" }
+}
