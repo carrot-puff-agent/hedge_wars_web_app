@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
 
 interface HedgeDebug {
   getRoomCode: () => string | null;
@@ -17,10 +18,10 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
   browser,
 }) => {
   const contexts = await Promise.all([
-    browser.newContext(),
-    browser.newContext(),
-    browser.newContext(),
-    browser.newContext(),
+    browser.newContext({ viewport: { width: 1024, height: 640 } }),
+    browser.newContext({ viewport: { width: 1024, height: 640 } }),
+    browser.newContext({ viewport: { width: 1024, height: 640 } }),
+    browser.newContext({ viewport: { width: 1024, height: 640 } }),
   ]);
   const pages = await Promise.all(contexts.map((ctx) => ctx.newPage()));
 
@@ -35,7 +36,7 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
   try {
     await Promise.all(pages.map((p) => p.goto('/games/hedge-wars/')));
     for (const page of pages) {
-      await expect(page.locator('#connection')).toContainText('Майстерня відчинена');
+      await expect(page.locator('#connection')).toHaveText(/^(Онлайн|\d+\s*мс)$/);
     }
 
     const [p1, p2, p3, p4] = pages as [
@@ -76,22 +77,43 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
       await expect(page.locator('#match-controls')).toBeVisible();
     }
 
-    // Verify touch target minimums (>= 48x48 CSS px) and zero horizontal overflow (UI-A01)
+    // Verify full-viewport canvas, touch target minimums (>= 48x48 CSS px) and zero scrolling (UI-A01)
     const layoutMetrics = await p1.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll<HTMLElement>('.touch-btn'));
-      const minHeight = Math.min(...buttons.map((b) => b.getBoundingClientRect().height));
-      const minWidth = Math.min(...buttons.map((b) => b.getBoundingClientRect().width));
+      const visibleControls = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '#match-controls .touch-btn, #match-hud .crate-btn, #match-hud .square-icon-btn',
+        ),
+      );
+      const minHeight = Math.min(...visibleControls.map((b) => b.getBoundingClientRect().height));
+      const minWidth = Math.min(...visibleControls.map((b) => b.getBoundingClientRect().width));
+      const canvasRect = document.querySelector('canvas')!.getBoundingClientRect();
       return {
         minHeight,
         minWidth,
-        noOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+        noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+        noVerticalOverflow: document.documentElement.scrollHeight <= window.innerHeight,
+        fullViewportCanvas:
+          Math.abs(canvasRect.width - window.innerWidth) <= 1 &&
+          Math.abs(canvasRect.height - window.innerHeight) <= 1,
       };
     });
     expect(layoutMetrics.minHeight).toBeGreaterThanOrEqual(48);
     expect(layoutMetrics.minWidth).toBeGreaterThanOrEqual(48);
-    expect(layoutMetrics.noOverflow).toBe(true);
+    expect(layoutMetrics.noHorizontalOverflow).toBe(true);
+    expect(layoutMetrics.noVerticalOverflow).toBe(true);
+    expect(layoutMetrics.fullViewportCanvas).toBe(true);
 
-    // Active player (p1, team-1) fires a rocket using the touch control button
+    // Save gameplay visual snapshot for comparison with gameplay ui sample.jpg
+    await mkdir('.local/screenshots', { recursive: true });
+    await p1.screenshot({ path: '.local/screenshots/gameplay-tablet.png' });
+
+    // Open and close weapon crate drawer
+    await p1.locator('#btn-weapon-crate').click();
+    await expect(p1.locator('#weapon-drawer')).toBeVisible();
+    await p1.locator('#btn-weapon-rocket').click();
+    await expect(p1.locator('#weapon-drawer')).toBeHidden();
+
+    // Active player (p1, team-1) fires a rocket using the circular fire button
     await p1.locator('#btn-fire').dispatchEvent('pointerdown', { pointerId: 1 });
     await p1.waitForTimeout(60);
     await p1.locator('#btn-fire').dispatchEvent('pointerup', { pointerId: 1 });
