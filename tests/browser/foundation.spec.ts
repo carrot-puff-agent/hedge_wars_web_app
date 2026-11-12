@@ -27,7 +27,7 @@ test('reduced motion and keyboard navigation remain usable', async ({ page }) =>
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('link', { name: 'Ігротека — головна' })).toBeFocused();
+  await expect(page.getByRole('link', { name: 'Наші ігри — головна' })).toBeFocused();
   expect(await page.locator('.game-card').evaluate((card) => getComputedStyle(card).transitionDuration)).toBe('0s');
   const response = await page.request.get('/manifest.webmanifest');
   expect(response.ok()).toBe(true);

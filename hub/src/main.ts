@@ -20,9 +20,9 @@ const gameCards = games.map((game) => `
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div class="app-shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Ігротека — головна">
+      <a class="brand" href="/" aria-label="Наші ігри — головна">
         <img class="brand-icon" src="/icons/controller.svg" alt="" />
-        <span>Ігротека</span>
+        <span>Наші ігри</span>
       </a>
     </header>
     <main class="main-content">

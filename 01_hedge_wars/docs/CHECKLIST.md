@@ -14,6 +14,7 @@ Dependencies: none. Gate: FND-A01–FND-A07. Foundation does not imply a playabl
 - [x] FND-06 — Add CI, meaningful contract/server/browser smoke checks; run locally and record results. Two unit/integration tests and four browser tests in each of production/development modes passed. CI execution on GitHub is not yet observed.
 - [!] FND-07 — Local foundation commit `33ac73b` exists; GitHub synchronization is blocked by missing Git credentials. `git push -u origin main` failed: could not read Username for https://github.com (terminal prompts disabled). Restore VM authentication, then push normally. See foundation session log. FND-A07 blocker is explicit; remote synchronization is not claimed.
 - [x] HUB-01 — Game-neutral Ігротека chooser and Material controller app icon deployed on LXC. Viewport, authenticated manifest, offline shell and ten browser checks passed; see session 2026-11-12-hub-redesign. Real Android launcher icon refresh remains an observation to collect.
+- [x] HUB-02 — Renamed the hub, game header and manifest to «Наші ігри» and deployed to the LXC. Build, ten browser checks and live route/manifest verification passed. Android launcher name refresh remains to be observed; see session 2026-11-12-app-rename.
 
 ## Phase 1 — pure simulation and terrain
 

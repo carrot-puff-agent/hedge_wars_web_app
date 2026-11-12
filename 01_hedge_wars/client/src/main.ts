@@ -5,7 +5,7 @@ import './style.css';
 registerPwa();
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <header class="game-header"><a class="back" href="/">← До ігор</a><span class="club-name">Ігротека</span></header>
+  <header class="game-header"><a class="back" href="/">← До ігор</a><span class="club-name">Наші ігри</span></header>
   <main class="workshop">
     <span class="eyebrow">ПРИГОДА НА ПІДХОДІ</span><h1>Їжачі баталії</h1>
     <p class="lead">Шоломи начищено. Їжачки розминаються.<br>А над самою грою ми ще чаклуємо!</p>
