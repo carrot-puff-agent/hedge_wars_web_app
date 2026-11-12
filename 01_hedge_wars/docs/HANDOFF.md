@@ -1,11 +1,11 @@
 # Current handoff — read before continuing
 
-Updated: 2026-11-12. Current session: `2026-11-12-foundation`.
+Updated: 2026-11-12. Latest session: `2026-11-12-lxc-github`.
 
 ## Paths and starting commands
 
-- Root/Git/npm workspace: `/home/coder/_PROJECTS/07_games_web_app`.
-- Game: `01_hedge_wars`; hub: `hub`; remote: `https://github.com/carrot-puff-agent/hedge_wars_web_app`.
+- Primary root/Git/npm workspace: `/home/dev/games-web-app` on the LXC. Original VM checkout: `/home/coder/_PROJECTS/07_games_web_app`.
+- Game: `01_hedge_wars`; hub: `hub`; LXC remote: `git@github.com:carrot-puff-agent/hedge_wars_web_app.git`.
 - Read root and game AGENTS, then TECH_SPEC, CHECKLIST, ACCEPTANCE and latest session log.
 - Run `git status --short --branch` before changing files. Use `npm ci`, `npm run dev`, `npm run check`, `npm run test:e2e` from the root.
 
@@ -31,12 +31,11 @@ Parent root is intentionally the Git root so hub and future games are versioned 
 - User confirmed Samsung Chrome installation works after both manifest links gained `crossorigin="use-credentials"`. The earlier Access bypass suggestion is superseded. Standalone deep-link and update behavior remain to be tested on Android. See `docs/sessions/2026-11-12-manifest-credentials.md`.
 - The hub is the neutral, full-viewport «Наші ігри» game chooser. The app icon is Google's Material `sports_esports` controller, filling 50% of its width; see `ASSET_REGISTER.md` and sessions `2026-11-12-hub-redesign.md` and `2026-11-12-app-rename.md`.
 - Known build note: the lazy-loaded Phaser preview chunk is about 1.20 MB / 320 KB gzip; map/device performance is not yet measured. Do not hide the warning by claiming an optimization.
-- Foundation committed locally as `33ac73b`, followed by a documentation commit recording this handoff. GitHub push is blocked: `GIT_TERMINAL_PROMPT=0 git push -u origin main` failed with `could not read Username for 'https://github.com': terminal prompts disabled`. `gh repo view` also returned HTTP 401; read-only Git access worked with an empty remote. Restore GitHub authentication through the user/administrator, then run a normal push. No tokens were inspected or changed.
-- No user Git identity was configured. Bootstrap commits use the transparent automated author `Project bootstrap agent <bootstrap@local.invalid>` via per-command options. No global Git identity was changed.
+- SSH GitHub authentication as `carrot-puff-agent` and a normal LXC push succeeded. The key is configured in the LXC user's SSH config; do not read or display the private key. LXC Git repository has a local bot identity and `main` tracks `origin/main`. See `docs/sessions/2026-11-12-lxc-github.md`.
 
 ## Next actions
 
-Begin SIM-01: add the pure simulation workspace with serializable state, seeded RNG, units and an explicit timestep decision. Then implement mask terrain/collision work in dependency order. Resolve Git synchronization independently if it remains blocked. Review the fresh checklist instead of rebuilding the foundation.
+Begin SIM-01 on the LXC: add the pure simulation workspace with serializable state, seeded RNG, units and an explicit timestep decision. Then implement mask terrain/collision work in dependency order. Review the checklist instead of rebuilding the foundation.
 
 ## Processes
 

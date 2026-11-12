@@ -20,7 +20,8 @@ HTTPS on the final Cloudflare hostname is required for Chrome's PWA features. Th
 Use Node 22.12+ / npm and the root lockfile. This VM currently also supports the pinned tools with Node 20.19.2. Node 22 is the CI baseline. System packages use `sudo agent-apt`, not direct apt. Do not inspect `.secrets`.
 
 ```sh
-cd /home/coder/_PROJECTS/07_games_web_app
+# On the original VM, use /home/coder/_PROJECTS/07_games_web_app instead.
+cd /home/dev/games-web-app
 npm ci
 npm run dev
 ```
