@@ -12,9 +12,11 @@ interface HedgeDebug {
   getTerrainChecksum: () => number | null;
   getWorldChecksum: () => number | null;
   getDirtyChunkUpdates: () => number;
+  getCameraZoom: () => number;
+  getActiveCharacterScreenPoint: () => { x: number; y: number } | null;
 }
 
-test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> match -> crater convergence -> results -> rematch', async ({
+test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -> match -> pass turn -> Angry Birds slingshot crater convergence -> results -> rematch', async ({
   browser,
 }) => {
   const contexts = await Promise.all([
@@ -46,18 +48,29 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
       (typeof pages)[0],
     ];
 
-    // Host (p1) creates room
+    // Verify 10 distinct team color options are rendered
+    await expect(p1.locator('.color-dot')).toHaveCount(10);
+
+    // Host (p1) enters name on first launch, picks color, and creates room (stored in localStorage)
     await p1.locator('#team-name-input').fill('Команда А');
+    await p1.locator('.color-dot[data-color="4"]').click();
+    const cachedPrefs = await p1.evaluate(() => ({
+      name: localStorage.getItem('yizhaklub.hedgeWars.playerName'),
+      color: localStorage.getItem('yizhaklub.hedgeWars.playerColor'),
+    }));
+    expect(cachedPrefs.name).toBe('Команда А');
+    expect(cachedPrefs.color).toBe('4');
+
     await p1.locator('#btn-create-room').click();
     await expect(p1.locator('#lobby-panel')).toBeVisible();
-    const roomCode = (await p1.locator('#lobby-room-code').textContent())!.trim();
-    expect(roomCode.length).toBeGreaterThanOrEqual(4);
+    await expect(p1.locator('#lobby-host-name')).toHaveText('Команда А');
 
-    // Players 2, 3, 4 join the room
+    // Players 2, 3, 4 join the room directly from the live Available Rooms list (no room codes!)
     for (const [idx, page] of [p2, p3, p4].entries()) {
       await page.locator('#team-name-input').fill(`Команда ${idx + 2}`);
-      await page.locator('#room-code-input').fill(roomCode);
-      await page.locator('#btn-join-room').click();
+      const roomCard = page.locator('.room-join-card', { hasText: 'Команда А' });
+      await expect(roomCard).toBeVisible();
+      await roomCard.click();
       await expect(page.locator('#lobby-panel')).toBeVisible();
     }
 
@@ -77,17 +90,18 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
       await expect(page.locator('#match-controls')).toBeVisible();
     }
 
-    // Verify full-viewport canvas, touch target minimums (>= 48x48 CSS px) and zero scrolling (UI-A01)
+    // Verify full-viewport canvas, Jump Left / Move Left / Jump Right / Move Right / Pass Turn / Crate buttons (>= 48x48 CSS px) and zero scrolling (UI-A01)
     const layoutMetrics = await p1.evaluate(() => {
       const visibleControls = Array.from(
         document.querySelectorAll<HTMLElement>(
-          '#match-controls .touch-btn, #match-hud .crate-btn, #match-hud .square-icon-btn',
+          '#match-controls .touch-btn, #match-hud .timer-circle, #match-hud .crate-btn, #match-hud .square-icon-btn',
         ),
       );
       const minHeight = Math.min(...visibleControls.map((b) => b.getBoundingClientRect().height));
       const minWidth = Math.min(...visibleControls.map((b) => b.getBoundingClientRect().width));
       const canvasRect = document.querySelector('canvas')!.getBoundingClientRect();
       return {
+        controlCount: visibleControls.length,
         minHeight,
         minWidth,
         noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -97,6 +111,7 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
           Math.abs(canvasRect.height - window.innerHeight) <= 1,
       };
     });
+    expect(layoutMetrics.controlCount).toBe(7);
     expect(layoutMetrics.minHeight).toBeGreaterThanOrEqual(48);
     expect(layoutMetrics.minWidth).toBeGreaterThanOrEqual(48);
     expect(layoutMetrics.noHorizontalOverflow).toBe(true);
@@ -113,22 +128,41 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
     await p1.locator('#btn-weapon-rocket').click();
     await expect(p1.locator('#weapon-drawer')).toBeHidden();
 
-    // Active player (p1, team-1) fires a rocket using the circular fire button
-    await p1.locator('#btn-fire').dispatchEvent('pointerdown', { pointerId: 1 });
-    await p1.waitForTimeout(60);
-    await p1.locator('#btn-fire').dispatchEvent('pointerup', { pointerId: 1 });
-
-    // Wait until turn resolves, crater settles, and activeTeamId advances to team-2
+    // Active player (p1, team-1) presses the circular timer with arrows to pass turn to team-2 (p2)
+    await p1.locator('#btn-pass-turn').click();
     await expect
       .poll(
         () =>
-          p1.evaluate(
+          p2.evaluate(
+            () =>
+              (window as unknown as { __hedgeDebug: HedgeDebug }).__hedgeDebug.getActiveTeamId(),
+          ),
+        { timeout: 6000 },
+      )
+      .toBe('team-2');
+
+    // Active player (p2, team-2) aims and fires in Angry Birds style:
+    // touch active character, pull back (down-right so shot flies up-left), and release finger to fire
+    const charScreenPt = await p2.evaluate(() =>
+      (window as unknown as { __hedgeDebug: HedgeDebug }).__hedgeDebug.getActiveCharacterScreenPoint(),
+    );
+    expect(charScreenPt).not.toBeNull();
+    await p2.mouse.move(charScreenPt!.x, charScreenPt!.y);
+    await p2.mouse.down();
+    await p2.mouse.move(charScreenPt!.x + 65, charScreenPt!.y + 22, { steps: 5 });
+    await p2.mouse.up();
+
+    // Wait until turn resolves, crater settles, and activeTeamId advances to team-3
+    await expect
+      .poll(
+        () =>
+          p2.evaluate(
             () =>
               (window as unknown as { __hedgeDebug: HedgeDebug }).__hedgeDebug.getActiveTeamId(),
           ),
         { timeout: 10000 },
       )
-      .toBe('team-2');
+      .toBe('team-3');
 
     // Wait for all 4 browsers to process the settled state update
     await expect
@@ -152,7 +186,7 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
           const first = states[0]!;
           const allMatch = states.every(
             (s) =>
-              s.activeTeamId === 'team-2' &&
+              s.activeTeamId === 'team-3' &&
               s.phase === 'control' &&
               s.rev !== null &&
               s.rev > 0 &&
@@ -178,11 +212,14 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room -> mat
     await expect(p1.locator('#results-panel')).toBeVisible();
     await expect(p1.locator('#results-headline')).toContainText('Перемагає команда');
 
-    // Player 2 rejoins room and they trigger a rematch (GAME-03)
-    await p2.locator('#room-code-input').fill(roomCode);
-    await p2.locator('#btn-join-room').click();
+    // Host triggers rematch and Player 2 rejoins from the Available Rooms list (GAME-03)
     await p1.locator('#btn-rematch').click();
     await expect(p1.locator('#lobby-panel')).toBeVisible();
+    const roomCard = p2.locator('.room-join-card', { hasText: 'Команда А' });
+    await expect(roomCard).toBeVisible();
+    await roomCard.click();
+    await expect(p2.locator('#lobby-panel')).toBeVisible();
+    await p2.locator('#btn-ready').click();
     await expect(p1.locator('#btn-start-match')).toBeEnabled();
 
     expect(errors).toEqual([]);

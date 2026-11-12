@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {
+  GRAVITY_PER_TICK,
   TERRAIN_EMPTY,
   TERRAIN_INDESTRUCTIBLE,
   buildCuratedMapTerrain,
@@ -9,6 +10,8 @@ import {
   type TerrainState,
   type WorldState,
 } from '@yizhaklub/hedge-simulation';
+
+const MAX_LAUNCH_SPEED = 11.5;
 
 export interface LocalAimFeedback {
   characterId: string;
@@ -24,13 +27,37 @@ interface InterpolatedPos {
   targetY: number;
 }
 
-const TEAM_HELMET_COLORS = [0xb8d838, 0x4ca2f4, 0xf26c4f, 0xb676f2] as const;
-const TEAM_TEXT_HEX = ['#c7ec3a', '#63b8ff', '#ff8364', '#cf9bff'] as const;
+const TEAM_HELMET_COLORS = [
+  0x8ec922,
+  0x3094f0,
+  0xe8523a,
+  0x9c56e8,
+  0xebb41e,
+  0x1ab8a0,
+  0xe04896,
+  0xf27d24,
+  0x485ce0,
+  0xb52b47,
+] as const;
+
+const TEAM_TEXT_HEX = [
+  '#b8f23a',
+  '#63b8ff',
+  '#ff8364',
+  '#cf9bff',
+  '#ffe052',
+  '#4af2d8',
+  '#ff85c2',
+  '#ffa652',
+  '#8c9eff',
+  '#ff6b8b',
+] as const;
 
 export function createMatchRenderer(
   parent: string,
   options?: {
-    onCanvasAimChange?: (angleDeg: number, facing: -1 | 1) => void;
+    onSlingshotAim?: (angleDeg: number, facing: -1 | 1, power: number | null) => void;
+    onSlingshotReleaseFire?: (angleDeg: number, facing: -1 | 1, power: number) => void;
   },
 ) {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -159,14 +186,33 @@ export function createMatchRenderer(
     private readonly charPositions = new Map<string, InterpolatedPos>();
     private readonly projPositions = new Map<string, InterpolatedPos>();
     private overviewMode = false;
+    private userZoomOverride: number | null = null;
     private manualPanUntilMs = 0;
-    private dragState: {
-      mode: 'pan' | 'aim';
-      startX: number;
-      startY: number;
-      scrollX: number;
-      scrollY: number;
-    } | null = null;
+    private readonly activeTouchPoints = new Map<number, { x: number; y: number }>();
+    private dragState:
+      | {
+          mode: 'pan';
+          pointerId: number;
+          startX: number;
+          startY: number;
+          scrollX: number;
+          scrollY: number;
+        }
+      | {
+          mode: 'aim';
+          pointerId: number;
+          angleDeg: number;
+          facing: -1 | 1;
+          power: number | null;
+          pullWorldX: number;
+          pullWorldY: number;
+        }
+      | {
+          mode: 'pinch';
+          startDist: number;
+          startZoom: number;
+        }
+      | null = null;
     private dirtyChunkUpdateCount = 0;
 
     create() {
@@ -211,27 +257,60 @@ export function createMatchRenderer(
         this.applyResponsiveZoom(false);
       });
 
-      // Direct canvas drag: drag near active character to aim, or drag anywhere else to pan camera
+      // Mouse wheel zoom support
+      this.input.on(
+        'wheel',
+        (_pointer: Phaser.Input.Pointer, _objs: unknown[], _dx: number, dy: number) => {
+          const factor = dy > 0 ? 0.9 : 1.1;
+          const nextZoom = Phaser.Math.Clamp(this.cameras.main.zoom * factor, 0.38, 1.65);
+          this.userZoomOverride = nextZoom;
+          this.cameras.main.setZoom(nextZoom);
+        },
+      );
+
+      // Multitouch gesture handling:
+      // - 2 fingers: pinch zoom
+      // - 1 finger on active character + move: Angry Birds pull-back aiming, release fires
+      // - 1 finger elsewhere + move: screen pan
       this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        this.activeTouchPoints.set(pointer.id, { x: pointer.x, y: pointer.y });
+
+        if (this.activeTouchPoints.size >= 2) {
+          const pts = Array.from(this.activeTouchPoints.values());
+          const dist = Math.max(10, Math.hypot(pts[1]!.x - pts[0]!.x, pts[1]!.y - pts[0]!.y));
+          if (this.dragState?.mode === 'aim') {
+            options?.onSlingshotAim?.(this.dragState.angleDeg, this.dragState.facing, null);
+          }
+          this.dragState = {
+            mode: 'pinch',
+            startDist: dist,
+            startZoom: this.cameras.main.zoom,
+          };
+          return;
+        }
+
         if (this.currentWorld && this.localAim) {
           const activePos = this.charPositions.get(this.localAim.characterId);
           if (activePos) {
             const worldPt = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-            if (Math.hypot(worldPt.x - activePos.x, worldPt.y - activePos.y) <= 260) {
+            if (Math.hypot(worldPt.x - activePos.x, worldPt.y - activePos.y) <= 85) {
               this.dragState = {
                 mode: 'aim',
-                startX: pointer.x,
-                startY: pointer.y,
-                scrollX: this.cameras.main.scrollX,
-                scrollY: this.cameras.main.scrollY,
+                pointerId: pointer.id,
+                angleDeg: this.localAim.angleDeg,
+                facing: this.localAim.facing,
+                power: null,
+                pullWorldX: worldPt.x,
+                pullWorldY: worldPt.y,
               };
-              this.updateAimFromWorldPoint(activePos, worldPt.x, worldPt.y);
               return;
             }
           }
         }
+
         this.dragState = {
           mode: 'pan',
+          pointerId: pointer.id,
           startX: pointer.x,
           startY: pointer.y,
           scrollX: this.cameras.main.scrollX,
@@ -240,47 +319,124 @@ export function createMatchRenderer(
       });
 
       this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+        if (this.activeTouchPoints.has(pointer.id)) {
+          this.activeTouchPoints.set(pointer.id, { x: pointer.x, y: pointer.y });
+        }
         if (!pointer.isDown || !this.dragState) return;
-        if (this.dragState.mode === 'aim' && this.localAim) {
+
+        if (this.dragState.mode === 'pinch' && this.activeTouchPoints.size >= 2) {
+          const pts = Array.from(this.activeTouchPoints.values());
+          const dist = Math.max(10, Math.hypot(pts[1]!.x - pts[0]!.x, pts[1]!.y - pts[0]!.y));
+          const nextZoom = Phaser.Math.Clamp(
+            this.dragState.startZoom * (dist / this.dragState.startDist),
+            0.38,
+            1.65,
+          );
+          this.userZoomOverride = nextZoom;
+          this.cameras.main.setZoom(nextZoom);
+          return;
+        }
+
+        if (
+          this.dragState.mode === 'aim' &&
+          this.dragState.pointerId === pointer.id &&
+          this.localAim
+        ) {
           const activePos = this.charPositions.get(this.localAim.characterId);
           if (activePos) {
             const worldPt = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-            this.updateAimFromWorldPoint(activePos, worldPt.x, worldPt.y);
+            this.updateSlingshotFromWorldPoint(activePos, worldPt.x, worldPt.y);
           }
           return;
         }
-        const dx = pointer.x - this.dragState.startX;
-        const dy = pointer.y - this.dragState.startY;
-        if (Math.hypot(dx, dy) > 8) {
-          this.manualPanUntilMs = performance.now() + 4500;
-          const zoom = this.cameras.main.zoom;
-          this.cameras.main.scrollX = this.dragState.scrollX - dx / zoom;
-          this.cameras.main.scrollY = this.dragState.scrollY - dy / zoom;
+
+        if (this.dragState.mode === 'pan' && this.dragState.pointerId === pointer.id) {
+          const dx = pointer.x - this.dragState.startX;
+          const dy = pointer.y - this.dragState.startY;
+          if (Math.hypot(dx, dy) > 6) {
+            this.manualPanUntilMs = performance.now() + 4500;
+            const zoom = this.cameras.main.zoom;
+            this.cameras.main.scrollX = this.dragState.scrollX - dx / zoom;
+            this.cameras.main.scrollY = this.dragState.scrollY - dy / zoom;
+          }
         }
       });
 
-      this.input.on('pointerup', () => {
-        this.dragState = null;
-      });
+      const handlePointerRelease = (pointer: Phaser.Input.Pointer, cancelled: boolean) => {
+        this.activeTouchPoints.delete(pointer.id);
+        if (!this.dragState) return;
+
+        if (this.dragState.mode === 'aim' && this.dragState.pointerId === pointer.id) {
+          const { angleDeg, facing, power } = this.dragState;
+          this.dragState = null;
+          if (!cancelled && power !== null && power >= 140) {
+            options?.onSlingshotReleaseFire?.(angleDeg, facing, power);
+          } else {
+            options?.onSlingshotAim?.(angleDeg, facing, null);
+          }
+          return;
+        }
+
+        if (this.activeTouchPoints.size === 0) {
+          this.dragState = null;
+        }
+      };
+
+      this.input.on('pointerup', (pointer: Phaser.Input.Pointer) =>
+        handlePointerRelease(pointer, false),
+      );
+      this.input.on('pointerupoutside', (pointer: Phaser.Input.Pointer) =>
+        handlePointerRelease(pointer, false),
+      );
 
       this.game.canvas.setAttribute('aria-hidden', 'true');
     }
 
-    private updateAimFromWorldPoint(
+    /**
+     * Angry Birds slingshot mechanics:
+     * Pull away from the character; launch trajectory points in the opposite direction.
+     * The farther you pull, the higher the kinetic energy (power) and the longer the trajectory dashes.
+     */
+    private updateSlingshotFromWorldPoint(
       charPos: { x: number; y: number },
       worldX: number,
       worldY: number,
     ): void {
-      const dx = worldX - charPos.x;
-      const dy = charPos.y - worldY;
-      if (Math.hypot(dx, dy) < 6) return;
-      const facing: -1 | 1 = dx >= 0 ? 1 : -1;
-      const rawDeg = (Math.atan2(dy, Math.abs(dx)) * 180) / Math.PI;
+      if (!this.dragState || this.dragState.mode !== 'aim') return;
+      const pullDx = worldX - charPos.x;
+      const pullDy = worldY - charPos.y;
+      const pullDist = Math.hypot(pullDx, pullDy);
+
+      this.dragState.pullWorldX = worldX;
+      this.dragState.pullWorldY = worldY;
+
+      if (pullDist < 12) {
+        this.dragState.power = null;
+        options?.onSlingshotAim?.(this.dragState.angleDeg, this.dragState.facing, null);
+        return;
+      }
+
+      // Opposite direction of pull is the launch vector
+      const launchDx = -pullDx;
+      const elevationUp = pullDy;
+      const facing: -1 | 1 = launchDx >= 0 ? 1 : -1;
+      const rawDeg = (Math.atan2(elevationUp, Math.abs(launchDx)) * 180) / Math.PI;
       const clampedDeg = Math.max(-80, Math.min(85, Math.round(rawDeg)));
-      options?.onCanvasAimChange?.(clampedDeg, facing);
+
+      const maxPullDist = 145;
+      const ratio = Math.min(1, (pullDist - 12) / (maxPullDist - 12));
+      const power = Math.round(140 + ratio * 860);
+
+      this.dragState.angleDeg = clampedDeg;
+      this.dragState.facing = facing;
+      this.dragState.power = power;
+      options?.onSlingshotAim?.(clampedDeg, facing, power);
     }
 
     private getDesiredPlayZoom(): number {
+      if (this.userZoomOverride !== null) {
+        return this.userZoomOverride;
+      }
       const w = this.scale.width || window.innerWidth;
       const h = this.scale.height || window.innerHeight;
       return Math.max(0.58, Math.min(1.15, Math.min(w / 1150, h / 620)));
@@ -386,6 +542,16 @@ export function createMatchRenderer(
     public focusActiveEntity(): void {
       this.overviewMode = false;
       this.manualPanUntilMs = 0;
+      const cam = this.cameras?.main;
+      if (cam && this.currentWorld?.activeCharacterId) {
+        const pos =
+          this.charPositions.get(this.currentWorld.activeCharacterId) ??
+          this.currentWorld.characters.find((c) => c.id === this.currentWorld!.activeCharacterId);
+        if (pos) {
+          cam.centerOn(pos.x, pos.y + 85);
+          cam.preRender();
+        }
+      }
     }
 
     public triggerEvents(events: readonly SimulationEvent[]): void {
@@ -626,28 +792,54 @@ export function createMatchRenderer(
       g.fillStyle(0xd99b38, 1);
       g.fillRect(x - r, y - 3, r * 2, 3.5);
 
-      // Aim reticle & charge gauge when active
+      // Angry Birds slingshot trajectory dashes & pull band when active
       if (isActive) {
         const rad = (-aimAngleDeg * Math.PI) / 180;
         const dirX = Math.cos(rad) * facing;
         const dirY = Math.sin(rad);
 
-        for (let step = 1; step <= 4; step++) {
-          const dotDist = 18 + step * 11;
-          g.fillStyle(0xffffff, 0.9 - step * 0.15);
-          g.fillCircle(x + dirX * dotDist, y + dirY * dotDist, 3.2 - step * 0.3);
-        }
-
         if (chargePower !== null && chargePower > 0) {
           const ratio = Math.min(1, chargePower / 1000);
-          const barLen = 16 + ratio * 44;
-          g.lineStyle(5, 0xff5722, 0.95);
-          g.lineBetween(
-            x + dirX * 16,
-            y + dirY * 16,
-            x + dirX * (16 + barLen),
-            y + dirY * (16 + barLen),
-          );
+          const pullLen = 16 + ratio * 75;
+
+          // Draw taut slingshot band behind the character (pull direction)
+          g.lineStyle(3.5, 0x3b2818, 0.85);
+          g.lineBetween(x, y, x - dirX * pullLen, y - dirY * pullLen);
+          g.fillStyle(0xffffff, 0.92);
+          g.fillCircle(x - dirX * pullLen, y - dirY * pullLen, 5.5);
+
+          // Draw ballistic trajectory dashes thrown in the opposite direction
+          // The farther you pull, the more kinetic energy and the longer the trajectory
+          const speed = Math.max(0.5, ratio) * MAX_LAUNCH_SPEED;
+          let simX = x + dirX * 18;
+          let simY = y + dirY * 18;
+          let simVx = dirX * speed;
+          let simVy = dirY * speed;
+          const windAcc = (this.currentWorld?.wind ?? 0) * 0.012;
+          const dashSteps = 5 + Math.round(ratio * 18);
+
+          for (let step = 1; step <= dashSteps; step++) {
+            const prevX = simX;
+            const prevY = simY;
+            for (let sub = 0; sub < 3; sub++) {
+              simX += simVx;
+              simY += simVy;
+              simVx += windAcc;
+              simVy += GRAVITY_PER_TICK;
+            }
+            if (step % 2 === 1) {
+              const alpha = Math.max(0.22, 0.95 - (step / (dashSteps + 2)) * 0.72);
+              g.lineStyle(3.5, 0xffffff, alpha);
+              g.lineBetween(prevX, prevY, simX, simY);
+            }
+          }
+        } else {
+          // Idle short trajectory indicator (like gameplay ui sample.jpg)
+          for (let step = 1; step <= 4; step++) {
+            const dotDist = 18 + step * 11;
+            g.fillStyle(0xffffff, 0.9 - step * 0.15);
+            g.fillCircle(x + dirX * dotDist, y + dirY * dotDist, 3.2 - step * 0.3);
+          }
         }
       }
     }
@@ -694,6 +886,21 @@ export function createMatchRenderer(
     public getDirtyChunkUpdateCount(): number {
       return this.dirtyChunkUpdateCount;
     }
+
+    public getCameraZoom(): number {
+      return this.cameras?.main?.zoom ?? 1;
+    }
+
+    public getActiveCharacterScreenPoint(): { x: number; y: number } | null {
+      const cam = this.cameras?.main;
+      if (!cam || !this.currentWorld?.activeCharacterId) return null;
+      const pos = this.charPositions.get(this.currentWorld.activeCharacterId);
+      if (!pos) return null;
+      cam.preRender();
+      const screenX = (pos.x - cam.midPoint.x) * cam.zoom + cam.width * 0.5;
+      const screenY = (pos.y - cam.midPoint.y) * cam.zoom + cam.height * 0.5;
+      return { x: screenX, y: screenY };
+    }
   }
 
   const scene = new MatchFieldScene('match-field');
@@ -724,6 +931,8 @@ export function createMatchRenderer(
     toggleOverview: () => scene.toggleOverview(),
     focusActiveEntity: () => scene.focusActiveEntity(),
     getDirtyChunkUpdateCount: () => scene.getDirtyChunkUpdateCount(),
+    getCameraZoom: () => scene.getCameraZoom(),
+    getActiveCharacterScreenPoint: () => scene.getActiveCharacterScreenPoint(),
     destroy: () => game.destroy(true),
   };
 }

@@ -7,8 +7,9 @@ export const DEFAULT_MAP_ID = 'meadow-boulders';
 export const MAX_MESSAGE_BYTES = 16_384;
 
 export const MIN_ROOM_PLAYERS = 2;
-export const MAX_ROOM_PLAYERS = 4;
+export const MAX_ROOM_PLAYERS = 8;
 export const DEFAULT_RECONNECT_GRACE_MS = 120_000;
+export const DEFAULT_ROOM_IDLE_EXPIRY_MS = 300_000;
 
 export const SERVER_CAPABILITIES = [
   'sessions',
@@ -50,7 +51,7 @@ export const ERROR_MESSAGES_UK: Record<ErrorCode, string> = {
   HELLO_REQUIRED: 'Спочатку треба привітатися з сервером.',
   SESSION_EXPIRED: 'Попередня ігрова сесія завершилася. Почнімо нову пригоду!',
   ROOM_NOT_FOUND: 'Такої кімнати не знайдено. Перевір код кімнати.',
-  ROOM_FULL: 'У кімнаті вже четверо гравців — вільних місць немає.',
+  ROOM_FULL: 'У кімнаті вже максимум гравців — вільних місць немає.',
   ROOM_ALREADY_STARTED: 'Бій у цій кімнаті вже триває.',
   ALREADY_IN_ROOM: 'Ти вже перебуваєш у кімнаті.',
   NOT_IN_ROOM: 'Ти ще не приєднався до кімнати.',
@@ -70,29 +71,71 @@ export const TEAM_PRESETS_UK = [
     name: 'Колючі мандрівники',
     colorIndex: 0,
     symbol: '●',
-    hex: '#225b43',
+    hex: '#8ec922',
     hogs: ['Бодя', 'Хрум', 'Шпилька', 'Жолудь'],
   },
   {
     name: 'Лісові бешкетники',
     colorIndex: 1,
     symbol: '▲',
-    hex: '#b84a27',
+    hex: '#3094f0',
     hogs: ['Пихтик', 'Іскра', 'Каштан', 'Вітерець'],
   },
   {
     name: 'Сонячні каштани',
     colorIndex: 2,
     symbol: '■',
-    hex: '#2b5b84',
+    hex: '#e8523a',
     hogs: ['Зірко', 'Бублик', 'Росинка', 'Туман'],
   },
   {
     name: 'Мохові вартові',
     colorIndex: 3,
     symbol: '◆',
-    hex: '#7a3e78',
+    hex: '#9c56e8',
     hogs: ['Мохнач', 'Шишка', 'Промінь', 'Листок'],
+  },
+  {
+    name: 'Золоті промені',
+    colorIndex: 4,
+    symbol: '★',
+    hex: '#ebb41e',
+    hogs: ['Промінчик', 'Сонях', 'Медок', 'Бурштин'],
+  },
+  {
+    name: 'Морські хвилі',
+    colorIndex: 5,
+    symbol: '✦',
+    hex: '#1ab8a0',
+    hogs: ['Хвилька', 'Мушля', 'Бриз', 'Корал'],
+  },
+  {
+    name: 'Малинові іскри',
+    colorIndex: 6,
+    symbol: '♥',
+    hex: '#e04896',
+    hogs: ['Малинка', 'Ягідка', 'Квітка', 'Зірочка'],
+  },
+  {
+    name: 'Бурштинові лиси',
+    colorIndex: 7,
+    symbol: '☀',
+    hex: '#f27d24',
+    hogs: ['Вогник', 'Рудик', 'Горішок', 'Клен'],
+  },
+  {
+    name: 'Грозові хмари',
+    colorIndex: 8,
+    symbol: '⬢',
+    hex: '#485ce0',
+    hogs: ['Грім', 'Вихор', 'Хмарка', 'Блискавка'],
+  },
+  {
+    name: 'Рубінові шишки',
+    colorIndex: 9,
+    symbol: '❖',
+    hex: '#b52b47',
+    hogs: ['Рубін', 'Калина', 'Гранат', 'Жар'],
   },
 ] as const;
 
@@ -126,6 +169,10 @@ export const MatchCommandAction = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('jump'),
     jumpKind: z.enum(['long', 'high']),
+    facing: z.union([z.literal(-1), z.literal(1)]).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('skipTurn'),
   }).strict(),
   z.object({
     kind: z.literal('selectWeapon'),
@@ -161,16 +208,19 @@ export const ClientMessage = z.discriminatedUnion('type', [
     clientTimeMs: z.number().int().nonnegative(),
   }).strict(),
   z.object({
+    type: z.literal('room.list'),
+  }).strict(),
+  z.object({
     type: z.literal('room.create'),
     teamName: z.string().min(1).max(40).optional(),
-    colorIndex: z.number().int().min(0).max(3).optional(),
+    colorIndex: z.number().int().min(0).max(9).optional(),
     hogNames: z.array(z.string().min(1).max(24)).min(1).max(4).optional(),
   }).strict(),
   z.object({
     type: z.literal('room.join'),
     roomCode: z.string().min(4).max(8),
     teamName: z.string().min(1).max(40).optional(),
-    colorIndex: z.number().int().min(0).max(3).optional(),
+    colorIndex: z.number().int().min(0).max(9).optional(),
     hogNames: z.array(z.string().min(1).max(24)).min(1).max(4).optional(),
   }).strict(),
   z.object({
@@ -179,7 +229,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('room.configure_team'),
     teamName: z.string().min(1).max(40).optional(),
-    colorIndex: z.number().int().min(0).max(3).optional(),
+    colorIndex: z.number().int().min(0).max(9).optional(),
     hogNames: z.array(z.string().min(1).max(24)).min(1).max(4).optional(),
   }).strict(),
   z.object({
@@ -237,7 +287,7 @@ export const PublicRoomPlayerSchema = z.object({
   sessionId: z.string(),
   teamId: z.string(),
   teamName: z.string(),
-  colorIndex: z.number().int().min(0).max(3),
+  colorIndex: z.number().int().min(0).max(9),
   hogNames: z.array(z.string()),
   ready: z.boolean(),
   connected: z.boolean(),
@@ -274,7 +324,7 @@ export const TeamInventorySchema = z.object({
 export const TeamStateSchema = z.object({
   id: z.string(),
   name: z.string(),
-  colorIndex: z.number().int().min(0).max(3),
+  colorIndex: z.number().int().min(0).max(9),
   inventory: TeamInventorySchema,
 }).strict();
 
@@ -418,7 +468,7 @@ export const SimulationEventSchema = z.discriminatedUnion('type', [
 export const StandingEntrySchema = z.object({
   teamId: z.string(),
   teamName: z.string(),
-  colorIndex: z.number().int().min(0).max(3),
+  colorIndex: z.number().int().min(0).max(9),
   survivingHogs: z.number().int().nonnegative(),
   totalHealth: z.number().int().nonnegative(),
   forfeited: z.boolean(),
@@ -438,7 +488,22 @@ export const MatchResultsSummarySchema = z.object({
 }).strict();
 export type MatchResultsSummary = z.infer<typeof MatchResultsSummarySchema>;
 
+export const PublicRoomSummarySchema = z.object({
+  roomCode: z.string(),
+  hostName: z.string(),
+  colorIndex: z.number().int().min(0).max(9),
+  playerCount: z.number().int().min(1).max(MAX_ROOM_PLAYERS),
+  maxPlayers: z.number().int().min(2).max(MAX_ROOM_PLAYERS),
+  status: z.enum(['waiting', 'ready', 'playing', 'results']),
+  expiresInSeconds: z.number().int().nonnegative(),
+}).strict();
+export type PublicRoomSummary = z.infer<typeof PublicRoomSummarySchema>;
+
 export const ServerMessage = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('rooms.list'),
+    rooms: z.array(PublicRoomSummarySchema),
+  }).strict(),
   z.object({
     type: z.literal('server.hello'),
     protocolVersion: z.literal(PROTOCOL_VERSION),
@@ -478,7 +543,7 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('room.left'),
     roomCode: z.string(),
-    reason: z.enum(['voluntary', 'closed']),
+    reason: z.enum(['voluntary', 'closed', 'expired']),
   }).strict(),
   z.object({
     type: z.literal('match.snapshot'),

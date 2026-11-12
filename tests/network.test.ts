@@ -121,7 +121,7 @@ async function connectTestClient(
   };
 }
 
-test('NET-02 & NET-08: 2-4 players create/join/configure/ready/start, 5th rejected, rooms isolated, safe logs', async (context) => {
+test('NET-02 & NET-08: up to 8 players create/join/configure/ready/start, 9th rejected, room list & expiry, safe logs', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'yizhaklub-net02-'));
   const logs: Record<string, unknown>[] = [];
   const app = createApp({
@@ -150,12 +150,20 @@ test('NET-02 & NET-08: 2-4 players create/join/configure/ready/start, 5th reject
     connectTestClient(wsURL),
     connectTestClient(wsURL),
     connectTestClient(wsURL),
+    connectTestClient(wsURL),
+    connectTestClient(wsURL),
+    connectTestClient(wsURL),
+    connectTestClient(wsURL),
   ]);
   context.after(async () => {
     await Promise.all(clients.map((c) => c.close()));
   });
 
-  const [c1, c2, c3, c4, c5, otherRoomClient] = clients as [
+  const [c1, c2, c3, c4, c5, c6, c7, c8, c9, otherRoomClient] = clients as [
+    TestClient,
+    TestClient,
+    TestClient,
+    TestClient,
     TestClient,
     TestClient,
     TestClient,
@@ -164,11 +172,17 @@ test('NET-02 & NET-08: 2-4 players create/join/configure/ready/start, 5th reject
     TestClient,
   ];
 
-  // Host creates room 1
-  c1.send({ type: 'room.create', teamName: 'Колючі <script>' });
+  // Subscribe c2 to room list before room creation
+  c2.send({ type: 'room.list' });
+  const emptyList = await c2.waitFor('rooms.list');
+  assert.equal(emptyList.rooms.length, 0);
+
+  // Host creates room 1 with color 7 (out of 10 colors)
+  c1.send({ type: 'room.create', teamName: 'Колючі <script>', colorIndex: 7 });
   const r1Initial = await c1.waitFor('room.state');
   assert.equal(r1Initial.status, 'waiting');
   assert.equal(r1Initial.players.length, 1);
+  assert.equal(r1Initial.players[0]!.colorIndex, 7);
   // HTML brackets are stripped by sanitiser
   assert.equal(r1Initial.players[0]!.teamName, 'Колючі script');
   // No resumeToken is leaked in room.state
@@ -176,23 +190,35 @@ test('NET-02 & NET-08: 2-4 players create/join/configure/ready/start, 5th reject
 
   const roomCode = r1Initial.roomCode;
 
+  // Subscribed client c2 automatically receives rooms.list with hostName and expiry
+  const updatedList = await c2.waitFor('rooms.list', (m) => m.rooms.length === 1);
+  assert.equal(updatedList.rooms[0]!.roomCode, roomCode);
+  assert.equal(updatedList.rooms[0]!.hostName, 'Колючі script');
+  assert.equal(updatedList.rooms[0]!.maxPlayers, 8);
+  assert.ok(updatedList.rooms[0]!.expiresInSeconds > 0);
+
   // Another client creates a completely separate room 2
   otherRoomClient.send({ type: 'room.create', teamName: 'Інша кімната' });
   const r2State = await otherRoomClient.waitFor('room.state');
   assert.notEqual(r2State.roomCode, roomCode);
 
-  // Clients 2, 3, 4 join room 1
-  for (const [idx, client] of [c2, c3, c4].entries()) {
-    client.send({ type: 'room.join', roomCode, teamName: `Команда ${idx + 2}` });
+  // Clients 2..8 join room 1 (up to 8 teams total)
+  for (const [idx, client] of [c2, c3, c4, c5, c6, c7, c8].entries()) {
+    client.send({
+      type: 'room.join',
+      roomCode,
+      teamName: `Команда ${idx + 2}`,
+      colorIndex: (idx + 1) % 10,
+    });
     const state = await client.waitFor('room.state', (m) => m.players.length === idx + 2);
     assert.equal(state.roomCode, roomCode);
   }
 
-  // 5th client is rejected with ROOM_FULL
-  c5.send({ type: 'room.join', roomCode });
-  const errFull = await c5.waitFor('server.error');
+  // 9th client is rejected with ROOM_FULL
+  c9.send({ type: 'room.join', roomCode });
+  const errFull = await c9.waitFor('server.error');
   assert.equal(errFull.code, 'ROOM_FULL');
-  assert.match(errFull.messageUk, /четверо/i);
+  assert.match(errFull.messageUk, /максимум/i);
 
   // Non-host cannot change room settings
   c2.send({ type: 'room.configure', turnDurationSeconds: 30 });
@@ -218,12 +244,12 @@ test('NET-02 & NET-08: 2-4 players create/join/configure/ready/start, 5th reject
   const errNotReady = await c1.waitFor('server.error');
   assert.equal(errNotReady.code, 'NOT_READY_TO_START');
 
-  // All 4 players ready up
-  for (const client of [c1, c2, c3, c4]) {
+  // All 8 players ready up
+  for (const client of [c1, c2, c3, c4, c5, c6, c7, c8]) {
     client.send({ type: 'room.ready', ready: true });
   }
   const readyState = await c1.waitFor('room.state', (m) => m.status === 'ready');
-  assert.equal(readyState.players.length, 4);
+  assert.equal(readyState.players.length, 8);
 
   // Room 2 remained untouched
   assert.equal(otherRoomClient.inbox.some((m) => m.type === 'room.state' && m.roomCode === roomCode), false);
@@ -235,16 +261,26 @@ test('NET-02 & NET-08: 2-4 players create/join/configure/ready/start, 5th reject
     c2.waitFor('match.snapshot'),
     c3.waitFor('match.snapshot'),
     c4.waitFor('match.snapshot'),
+    c5.waitFor('match.snapshot'),
+    c6.waitFor('match.snapshot'),
+    c7.waitFor('match.snapshot'),
+    c8.waitFor('match.snapshot'),
   ]);
   for (const snap of snaps) {
     assert.equal(snap.roomCode, roomCode);
-    assert.equal(snap.world.teams.length, 4);
-    assert.equal(snap.world.characters.length, 8);
+    assert.equal(snap.world.teams.length, 8);
+    assert.equal(snap.world.characters.length, 16);
   }
+
+  // Verify idle room 2 expires when sweepExpiredRooms runs past expiry span
+  const expiredCount = app.rooms.sweepExpiredRooms(Date.now() + 400_000);
+  assert.equal(expiredCount, 1);
+  const leftMsg = await otherRoomClient.waitFor('room.left');
+  assert.equal(leftMsg.reason, 'expired');
 
   // Verify structured logs never contain resumeTokens
   const serializedLogs = JSON.stringify(logs);
-  for (const client of [c1, c2, c3, c4, c5]) {
+  for (const client of [c1, c2, c3, c4, c5, c6, c7, c8, c9]) {
     assert.equal(serializedLogs.includes(client.resumeToken), false);
   }
 });

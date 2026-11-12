@@ -25,13 +25,8 @@ export interface CuratedMapManifest {
   waterLine: number;
   contentHash: string;
   shapes: readonly TerrainShape[];
-  /** Four team spawn groups, each supporting up to 4 characters interleaved across the island. */
-  teamSpawns: readonly [
-    readonly CuratedSpawnPoint[],
-    readonly CuratedSpawnPoint[],
-    readonly CuratedSpawnPoint[],
-    readonly CuratedSpawnPoint[],
-  ];
+  /** Up to 8 team spawn groups, each supporting up to 4 characters interleaved across the island. */
+  teamSpawns: readonly (readonly CuratedSpawnPoint[])[];
 }
 
 export const CURATED_MAP_MEADOW: CuratedMapManifest = {
@@ -90,6 +85,30 @@ export const CURATED_MAP_MEADOW: CuratedMapManifest = {
       { x: 628, y: 530, facing: 1 },
       { x: 1578, y: 530, facing: -1 },
       { x: 408, y: 690, facing: 1 },
+    ],
+    [
+      { x: 990, y: 510, facing: 1 },
+      { x: 560, y: 530, facing: 1 },
+      { x: 1480, y: 530, facing: -1 },
+      { x: 270, y: 690, facing: 1 },
+    ],
+    [
+      { x: 1058, y: 510, facing: -1 },
+      { x: 1490, y: 530, facing: -1 },
+      { x: 570, y: 530, facing: 1 },
+      { x: 1778, y: 690, facing: -1 },
+    ],
+    [
+      { x: 495, y: 530, facing: 1 },
+      { x: 1024, y: 510, facing: 1 },
+      { x: 1385, y: 530, facing: -1 },
+      { x: 355, y: 690, facing: 1 },
+    ],
+    [
+      { x: 1553, y: 530, facing: -1 },
+      { x: 1024, y: 510, facing: -1 },
+      { x: 663, y: 530, facing: 1 },
+      { x: 1693, y: 690, facing: -1 },
     ],
   ],
 };

@@ -4,6 +4,7 @@ import {
   CONTENT_HASH,
   DEFAULT_MAP_ID,
   DEFAULT_RECONNECT_GRACE_MS,
+  DEFAULT_ROOM_IDLE_EXPIRY_MS,
   ERROR_MESSAGES_UK,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
@@ -18,6 +19,7 @@ import {
   type MatchCommandAction,
   type MatchResultsSummary,
   type PublicRoomPlayer,
+  type PublicRoomSummary,
   type RoomSettings,
   type ServerMessage,
   type StandingEntry,
@@ -57,6 +59,7 @@ export interface SessionRecord {
   disconnectTimer: NodeJS.Timeout | null;
   rateWindowStartMs: number;
   rateWindowCount: number;
+  subscribedToRoomList: boolean;
 }
 
 export interface RoomPlayerRecord {
@@ -97,12 +100,14 @@ export interface RoomRecord {
   activeMatch: ActiveMatchRecord | null;
   lastResults: MatchResultsSummary | null;
   createdAtMs: number;
+  lastActivityAtMs: number;
   matchCounter: number;
 }
 
 export interface RoomManagerOptions {
   serverVersion: string;
   reconnectGraceMs?: number;
+  roomIdleExpiryMs?: number;
   autoTickMatches?: boolean;
   networkBroadcastEveryTicks?: number;
   maxRooms?: number;
@@ -134,6 +139,7 @@ export class RoomManager {
 
   private readonly serverVersion: string;
   private readonly reconnectGraceMs: number;
+  private readonly roomIdleExpiryMs: number;
   private readonly autoTickMatches: boolean;
   private readonly networkBroadcastEveryTicks: number;
   private readonly maxRooms: number;
@@ -141,10 +147,12 @@ export class RoomManager {
   private readonly maxCommandsPerSecond: number;
   private readonly seedOverride?: number | string;
   private readonly log: (entry: Record<string, unknown>) => void;
+  private readonly expirySweepTimer: NodeJS.Timeout | null;
 
   constructor(options: RoomManagerOptions) {
     this.serverVersion = options.serverVersion;
     this.reconnectGraceMs = options.reconnectGraceMs ?? DEFAULT_RECONNECT_GRACE_MS;
+    this.roomIdleExpiryMs = options.roomIdleExpiryMs ?? DEFAULT_ROOM_IDLE_EXPIRY_MS;
     this.autoTickMatches = options.autoTickMatches ?? true;
     this.networkBroadcastEveryTicks = options.networkBroadcastEveryTicks ?? 2;
     this.maxRooms = options.maxRooms ?? 32;
@@ -158,6 +166,10 @@ export class RoomManager {
           console.info(JSON.stringify({ at: new Date().toISOString(), ...entry }));
         }
       });
+    this.expirySweepTimer = setInterval(() => {
+      this.sweepExpiredRooms();
+    }, 5_000);
+    this.expirySweepTimer.unref?.();
   }
 
   public getRoomCount(): number {
@@ -225,6 +237,11 @@ export class RoomManager {
           clientTimeMs: message.clientTimeMs,
           serverTimeMs: Date.now(),
         });
+        return true;
+      case 'room.list':
+        session.subscribedToRoomList = true;
+        this.sweepExpiredRooms();
+        this.sendRoomsList(socket);
         return true;
       case 'room.create':
         this.handleRoomCreate(session, message);
@@ -330,6 +347,7 @@ export class RoomManager {
         disconnectTimer: null,
         rateWindowStartMs: now,
         rateWindowCount: 0,
+        subscribedToRoomList: false,
       };
       this.sessionsById.set(sessionId, session);
       this.sessionsByResumeToken.set(resumeToken, session);
@@ -481,7 +499,7 @@ export class RoomManager {
         ? options.colorIndex
         : preset.colorIndex;
     if (existingColors.has(colorIndex)) {
-      for (let c = 0; c < 4; c++) {
+      for (let c = 0; c < TEAM_PRESETS_UK.length; c++) {
         if (!existingColors.has(c)) {
           colorIndex = c;
           break;
@@ -518,9 +536,11 @@ export class RoomManager {
       this.sendError(session.socket, 'ALREADY_IN_ROOM');
       return;
     }
+    this.sweepExpiredRooms();
     if (this.roomsByCode.size >= this.maxRooms) {
       this.pruneClosedRooms();
     }
+    const now = Date.now();
     const roomCode = this.generateUniqueRoomCode();
     const player = this.buildTeamPlayerRecord(session.sessionId, 0, message, new Set());
     const room: RoomRecord = {
@@ -531,7 +551,8 @@ export class RoomManager {
       players: [player],
       activeMatch: null,
       lastResults: null,
-      createdAtMs: Date.now(),
+      createdAtMs: now,
+      lastActivityAtMs: now,
       matchCounter: 0,
     };
     this.roomsByCode.set(roomCode, room);
@@ -554,6 +575,7 @@ export class RoomManager {
       this.sendError(session.socket, 'ALREADY_IN_ROOM');
       return;
     }
+    this.sweepExpiredRooms();
     const roomCode = sanitiseRoomCode(message.roomCode);
     const room = this.roomsByCode.get(roomCode);
     if (!room || room.status === 'closed') {
@@ -578,6 +600,7 @@ export class RoomManager {
     const existingColors = new Set(room.players.map((p) => p.colorIndex));
     const player = this.buildTeamPlayerRecord(session.sessionId, slotIndex, message, existingColors);
     room.players.push(player);
+    room.lastActivityAtMs = Date.now();
     session.roomCode = room.roomCode;
     session.teamId = player.teamId;
 
@@ -592,7 +615,10 @@ export class RoomManager {
     this.broadcastRoomState(room);
   }
 
-  private handleRoomLeave(session: SessionRecord, reason: 'voluntary' | 'closed'): void {
+  private handleRoomLeave(
+    session: SessionRecord,
+    reason: 'voluntary' | 'closed' | 'expired',
+  ): void {
     if (!session.roomCode) {
       this.sendError(session.socket, 'NOT_IN_ROOM');
       return;
@@ -612,6 +638,7 @@ export class RoomManager {
     if (!room) return;
 
     room.players = room.players.filter((p) => p.sessionId !== session.sessionId);
+    room.lastActivityAtMs = Date.now();
 
     if (room.status === 'playing' && room.activeMatch && oldTeamId) {
       this.forfeitTeamInMatch(room, room.activeMatch, oldTeamId);
@@ -619,6 +646,7 @@ export class RoomManager {
 
     if (room.players.length === 0 || room.players.every((p) => !p.connected && p.forfeited)) {
       this.closeRoom(room);
+      this.broadcastRoomsList();
       return;
     }
 
@@ -646,6 +674,80 @@ export class RoomManager {
     room.status = 'closed';
     this.roomsByCode.delete(room.roomCode);
     this.log({ event: 'room.closed', roomCode: room.roomCode });
+  }
+
+  public sweepExpiredRooms(nowMs = Date.now()): number {
+    let expiredCount = 0;
+    for (const [code, room] of this.roomsByCode) {
+      if (room.status === 'playing') continue;
+      if (nowMs - room.lastActivityAtMs >= this.roomIdleExpiryMs) {
+        for (const p of room.players) {
+          const sess = this.sessionsById.get(p.sessionId);
+          if (sess) {
+            sess.roomCode = null;
+            sess.teamId = null;
+            this.send(sess.socket, {
+              type: 'room.left',
+              roomCode: code,
+              reason: 'expired',
+            });
+          }
+        }
+        this.closeRoom(room);
+        this.roomsByCode.delete(code);
+        expiredCount += 1;
+      }
+    }
+    if (expiredCount > 0) {
+      this.broadcastRoomsList(nowMs);
+    }
+    return expiredCount;
+  }
+
+  private buildPublicRoomsList(nowMs = Date.now()): PublicRoomSummary[] {
+    const summaries: PublicRoomSummary[] = [];
+    for (const room of this.roomsByCode.values()) {
+      if (room.status === 'closed' || room.status === 'playing') continue;
+      if (room.players.length === 0 || room.players.length >= MAX_ROOM_PLAYERS) continue;
+      if (!room.players.some((p) => p.connected)) continue;
+      const host =
+        room.players.find((p) => p.sessionId === room.hostSessionId) ?? room.players[0]!;
+      const elapsedMs = Math.max(0, nowMs - room.lastActivityAtMs);
+      const expiresInSeconds = Math.max(
+        0,
+        Math.ceil((this.roomIdleExpiryMs - elapsedMs) / 1000),
+      );
+      if (expiresInSeconds <= 0) continue;
+      summaries.push({
+        roomCode: room.roomCode,
+        hostName: host.teamName,
+        colorIndex: host.colorIndex,
+        playerCount: room.players.length,
+        maxPlayers: MAX_ROOM_PLAYERS,
+        status: room.status,
+        expiresInSeconds,
+      });
+    }
+    return summaries;
+  }
+
+  private sendRoomsList(socket: WebSocket | null, nowMs = Date.now()): void {
+    this.send(socket, {
+      type: 'rooms.list',
+      rooms: this.buildPublicRoomsList(nowMs),
+    });
+  }
+
+  private broadcastRoomsList(nowMs = Date.now()): void {
+    const msg: ServerMessage = {
+      type: 'rooms.list',
+      rooms: this.buildPublicRoomsList(nowMs),
+    };
+    for (const sess of this.sessionsById.values()) {
+      if (sess.subscribedToRoomList && sess.socket) {
+        this.send(sess.socket, msg);
+      }
+    }
   }
 
   private pruneClosedRooms(): void {
@@ -1050,8 +1152,24 @@ export class RoomManager {
     }
 
     match.lastAckSeqByTeam[teamId] = message.commandSeq;
+
+    if (message.action.kind === 'skipTurn') {
+      activeChar.moveInput = 0;
+      this.advanceToNextTurn(room, match);
+      this.send(session.socket, {
+        type: 'match.command_ack',
+        matchId: match.matchId,
+        commandSeq: message.commandSeq,
+        accepted: true,
+        tick: match.world.tick,
+      });
+      this.broadcastMatchState(room, match);
+      return;
+    }
+
     const simCommands = this.translateActionToSimulationCommands(
       activeCharacterId,
+      activeChar.aimAngleDeg,
       message.action,
     );
     match.pendingCommands.push(...simCommands);
@@ -1067,7 +1185,8 @@ export class RoomManager {
 
   private translateActionToSimulationCommands(
     characterId: string,
-    action: MatchCommandAction,
+    currentAimAngleDeg: number,
+    action: Exclude<MatchCommandAction, { kind: 'skipTurn' }>,
   ): SimulationCommand[] {
     switch (action.kind) {
       case 'move':
@@ -1081,8 +1200,19 @@ export class RoomManager {
             ...(action.facing !== undefined ? { facing: action.facing } : {}),
           },
         ];
-      case 'jump':
-        return [{ type: 'jump', characterId, kind: action.jumpKind }];
+      case 'jump': {
+        const cmds: SimulationCommand[] = [];
+        if (action.facing !== undefined) {
+          cmds.push({
+            type: 'aim',
+            characterId,
+            angleDeg: currentAimAngleDeg,
+            facing: action.facing,
+          });
+        }
+        cmds.push({ type: 'jump', characterId, kind: action.jumpKind });
+        return cmds;
+      }
       case 'selectWeapon':
         return [
           {
@@ -1420,6 +1550,7 @@ export class RoomManager {
   }
 
   private broadcastRoomState(room: RoomRecord): void {
+    room.lastActivityAtMs = Date.now();
     const publicPlayers: PublicRoomPlayer[] = room.players.map((p) => ({
       sessionId: p.sessionId,
       teamId: p.teamId,
@@ -1447,9 +1578,13 @@ export class RoomManager {
       const sess = this.sessionsById.get(player.sessionId);
       this.send(sess?.socket ?? null, stateMsg);
     }
+    this.broadcastRoomsList();
   }
 
   public closeAll(): void {
+    if (this.expirySweepTimer) {
+      clearInterval(this.expirySweepTimer);
+    }
     for (const room of this.roomsByCode.values()) {
       if (room.activeMatch?.tickTimer) {
         clearInterval(room.activeMatch.tickTimer);

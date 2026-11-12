@@ -196,6 +196,9 @@ body,
   position: relative;
   width: 62px;
   height: 62px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.26);
   backdrop-filter: blur(4px);
@@ -204,6 +207,18 @@ body,
   place-items: center;
   color: #ffffff;
   box-shadow: 0 4px 12px rgba(15, 42, 62, 0.2);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.timer-circle:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.48);
+  transform: scale(0.95);
+}
+
+.timer-circle:disabled {
+  cursor: default;
+  opacity: 0.78;
 }
 
 .timer-svg {
@@ -504,41 +519,38 @@ body,
 
 .team-setup-strip {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
 }
 
-.team-setup-strip input,
-.join-inline input {
-  min-height: 48px;
-  padding: 8px 12px;
-  border-radius: 13px;
+.team-setup-strip input {
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: 12px;
   border: 1.5px solid #bdcbb8;
   background: #fff;
   color: var(--ink);
   font: inherit;
   font-size: 15px;
   font-weight: 750;
-  min-width: 0;
-  flex: 1;
+  width: 100%;
 }
 
 .color-picker {
-  display: flex;
-  gap: 5px;
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
 }
 
 .color-dot {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  min-height: 48px;
+  height: 32px;
+  min-width: 0;
   padding: 0;
-  border-radius: 12px;
-  border: 2.5px solid var(--chip-color, var(--green));
+  border-radius: 9px;
+  border: 2px solid var(--chip-color, var(--green));
   background: #fff;
   color: var(--chip-color, var(--green));
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 900;
   cursor: pointer;
 }
@@ -548,22 +560,89 @@ body,
   color: #fff;
 }
 
-.modal-split {
+.rooms-browser {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.join-inline {
-  display: flex;
   gap: 8px;
 }
 
-.join-inline input {
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
+.rooms-browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 850;
+  color: #3a5464;
+}
+
+.rooms-browser-header .game-action-btn {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.available-rooms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow: hidden;
+}
+
+.empty-rooms-hint {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f2ece0;
   text-align: center;
-  max-width: 140px;
+  font-size: 13px;
+  font-weight: 750;
+  color: #556b78;
+}
+
+.room-list-row {
+  margin: 0;
+}
+
+.room-join-card {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1.5px solid #d5cebe;
+  border-left: 5px solid var(--team-color, #2f7d44);
+  background: #ffffff;
+  color: #1c3545;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.room-join-card:hover,
+.room-join-card:active {
+  background: #eef6f1;
+}
+
+.room-host-title {
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.room-meta-pill {
+  font-size: 12px;
+  font-weight: 850;
+  color: #2f7d44;
+  background: #e4f2e9;
+  padding: 3px 8px;
+  border-radius: 999px;
 }
 
 .game-action-btn {

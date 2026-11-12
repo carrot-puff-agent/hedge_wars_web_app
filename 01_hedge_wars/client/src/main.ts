@@ -1,5 +1,6 @@
 import {
   CONTENT_HASH,
+  MAX_ROOM_PLAYERS,
   PROTOCOL_VERSION,
   RULES_VERSION,
   ServerMessage,
@@ -8,6 +9,7 @@ import {
   type MatchCommandAction,
   type MatchResultsSummary,
   type PublicRoomPlayer,
+  type PublicRoomSummary,
   type RoomSettings,
 } from '@yizhaklub/hedge-protocol';
 import {
@@ -18,15 +20,48 @@ import {
   type WeaponKind,
   type WorldState,
 } from '@yizhaklub/hedge-simulation';
-import { registerPwa } from '../../../platform/pwa';
 import { SoundController } from './audio';
 import type { LocalAimFeedback } from './renderer';
 import './style.css';
 
-registerPwa();
+const RESUME_TOKEN_STORAGE_KEY = 'yizhaklub.hedgeWars.resumeToken';
+const PLAYER_NAME_STORAGE_KEY = 'yizhaklub.hedgeWars.playerName';
+const PLAYER_COLOR_STORAGE_KEY = 'yizhaklub.hedgeWars.playerColor';
 
-const RESUME_TOKEN_STORAGE_KEY = 'yizhaklub.hedge.resumeToken';
 const sound = new SoundController();
+
+function loadCachedPlayerName(): string {
+  try {
+    return localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function loadCachedColorIndex(): number {
+  try {
+    const raw = localStorage.getItem(PLAYER_COLOR_STORAGE_KEY);
+    if (raw === null) return 0;
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed >= 0 && parsed < TEAM_PRESETS_UK.length ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function savePlayerPreferences(name: string, colorIndex: number): void {
+  try {
+    if (name.trim().length > 0) {
+      localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim());
+    }
+    localStorage.setItem(PLAYER_COLOR_STORAGE_KEY, String(colorIndex));
+  } catch {
+    // ignore storage errors in restricted environments
+  }
+}
+
+const initialCachedName = loadCachedPlayerName();
+const initialCachedColor = loadCachedColorIndex();
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div class="game-viewport">
@@ -57,9 +92,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 
     <!-- IN-MATCH FLOATING HUD (Modeled directly on gameplay ui sample.jpg) -->
     <section id="match-hud" class="match-hud-overlay" aria-label="Стан бою" hidden>
-      <!-- Top-Left: Circular Timer + Square Action Buttons -->
+      <!-- Top-Left: Circular Timer (press to pass turn) + Leave Button -->
       <div class="hud-top-left">
-        <div class="timer-circle" role="status" aria-live="polite" title="Час ходу">
+        <button id="btn-pass-turn" type="button" class="touch-btn timer-circle" aria-label="Пропустити хід" title="Натисни, щоб передати хід">
           <svg viewBox="0 0 64 64" aria-hidden="true" class="timer-svg">
             <path d="M16 14 A24 24 0 1 1 10 38" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
             <polygon points="16,7 22,16 11,17" fill="currentColor"/>
@@ -67,10 +102,6 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
             <polygon points="48,57 42,48 53,47" fill="currentColor"/>
           </svg>
           <span id="turn-timer-label" class="timer-number">45</span>
-        </div>
-
-        <button id="btn-camera-toggle" type="button" class="square-icon-btn" aria-label="Огляд мапи" title="Огляд мапи">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
         </button>
 
         <button id="btn-match-leave" type="button" class="square-icon-btn" aria-label="Вийти з бою" title="Вийти з бою">
@@ -115,20 +146,15 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
             <button type="button" class="fuse-btn" data-fuse="4">4с</button>
             <button type="button" class="fuse-btn" data-fuse="5">5с</button>
           </div>
-          <div class="fuse-row">
-            <button id="btn-aim-up" type="button" class="touch-btn fuse-btn" data-hold="aim-up" aria-label="Приціл вище">Приціл ▲</button>
-            <button id="btn-aim-down" type="button" class="touch-btn fuse-btn" data-hold="aim-down" aria-label="Приціл нижче">Приціл ▼</button>
-            <button id="btn-jump-high" type="button" class="touch-btn fuse-btn" aria-label="Високе сальто">Сальто ↑</button>
-          </div>
         </div>
       </div>
     </section>
 
-    <!-- IN-MATCH MULTITOUCH THUMB CIRCLES (Bottom-Left & Bottom-Right like gameplay ui sample.jpg) -->
+    <!-- IN-MATCH MULTITOUCH THUMB CIRCLES (Jump Left / Move Left on Bottom-Left; Jump Right / Move Right on Bottom-Right) -->
     <section id="match-controls" class="match-thumb-controls" aria-label="Керування їжачком" hidden>
-      <!-- Bottom-Left: 2 stacked circular buttons (Jump above Move Left) -->
+      <!-- Bottom-Left: Jump Left above Move Left -->
       <div class="thumb-column thumb-left">
-        <button id="btn-jump-long" type="button" class="touch-btn circle-control-btn" aria-label="Стрибок уперед">
+        <button id="btn-jump-left" type="button" class="touch-btn circle-control-btn" aria-label="Стрибок ліворуч">
           <svg viewBox="0 0 64 64" aria-hidden="true">
             <polygon points="14,18 40,22 24,42" fill="currentColor"/>
             <circle cx="38" cy="40" r="10" fill="currentColor"/>
@@ -143,13 +169,13 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
         </button>
       </div>
 
-      <!-- Bottom-Right: 2 stacked circular buttons (Fire/Launch above Move Right) -->
+      <!-- Bottom-Right: Jump Right above Move Right -->
       <div class="thumb-column thumb-right">
-        <button id="btn-fire" type="button" class="touch-btn circle-control-btn fire-circle-btn" aria-label="Постріл. Утримуй для сили">
+        <button id="btn-jump-right" type="button" class="touch-btn circle-control-btn" aria-label="Стрибок праворуч">
           <svg viewBox="0 0 64 64" aria-hidden="true">
-            <polygon points="52,16 14,30 28,36 36,50" fill="currentColor"/>
+            <polygon points="50,18 24,22 40,42" fill="currentColor"/>
+            <circle cx="26" cy="40" r="10" fill="currentColor"/>
           </svg>
-          <div class="charge-bar-mini" aria-hidden="true"><div id="charge-fill" class="charge-fill"></div></div>
         </button>
 
         <button id="btn-move-right" type="button" class="touch-btn circle-control-btn" data-hold="right" aria-label="Рух праворуч">
@@ -161,16 +187,24 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       </div>
     </section>
 
-    <!-- CENTERED APP DIALOG: ENTRY (Create / Join Room) -->
+    <!-- CENTERED APP DIALOG: ENTRY (Cached Player Name + 10 Team Colors + Live Available Rooms List) -->
     <section id="entry-panel" class="modal-card" aria-label="Кімнати для гри">
       <h1 class="modal-title">Їжачі баталії</h1>
 
       <div class="team-setup-strip">
-        <input id="team-name-input" type="text" maxlength="24" value="Колючі мандрівники" aria-label="Назва загону" />
+        <input
+          id="team-name-input"
+          type="text"
+          maxlength="24"
+          placeholder="Введи своє ім’я…"
+          value="${initialCachedName}"
+          aria-label="Ім’я гравця"
+          autocomplete="nickname"
+        />
         <div class="color-picker" role="group" aria-label="Колір команди">
           ${TEAM_PRESETS_UK.map(
             (preset, idx) => `
-            <button type="button" class="color-dot ${idx === 0 ? 'selected-chip' : ''}" data-color="${idx}" style="--chip-color: ${preset.hex}" aria-label="${preset.name}">
+            <button type="button" class="color-dot ${idx === initialCachedColor ? 'selected-chip' : ''}" data-color="${idx}" style="--chip-color: ${preset.hex}" aria-label="${preset.name}" title="${preset.name}">
               ${preset.symbol}
             </button>
           `,
@@ -178,28 +212,27 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
         </div>
       </div>
 
-      <div class="modal-split">
-        <button id="btn-create-room" type="button" class="game-action-btn primary-action">
-          Створити кімнату
-        </button>
-
-        <div class="join-inline">
-          <input id="room-code-input" type="text" maxlength="8" placeholder="Код" aria-label="Код кімнати" autocomplete="off" />
-          <button id="btn-join-room" type="button" class="game-action-btn secondary-action">
-            Увійти
+      <div class="rooms-browser">
+        <div class="rooms-browser-header">
+          <span>Доступні кімнати</span>
+          <button id="btn-create-room" type="button" class="game-action-btn primary-action">
+            + Створити кімнату
           </button>
         </div>
+        <ul id="available-rooms-list" class="available-rooms-list" aria-label="Список доступних кімнат">
+          <li class="empty-rooms-hint">Немає відкритих кімнат — створи нову!</li>
+        </ul>
       </div>
     </section>
 
-    <!-- CENTERED APP DIALOG: WAITING ROOM LOBBY -->
+    <!-- CENTERED APP DIALOG: WAITING ROOM LOBBY (up to 8 players) -->
     <section id="lobby-panel" class="modal-card" aria-label="Кімната очікування" hidden>
       <div class="lobby-top">
         <div class="code-pill">
-          <span>Код:</span>
-          <strong id="lobby-room-code">----</strong>
+          <span>Хост:</span>
+          <strong id="lobby-host-name">---</strong>
         </div>
-        <span id="lobby-status-text" class="lobby-hint" role="status" aria-live="polite">2–4 гравці</span>
+        <span id="lobby-status-text" class="lobby-hint" role="status" aria-live="polite">2–${MAX_ROOM_PLAYERS} гравців</span>
         <button id="btn-leave-room" type="button" class="icon-close-btn" aria-label="Вийти з кімнати">✕</button>
       </div>
 
@@ -271,9 +304,9 @@ const pauseBanner = document.querySelector<HTMLElement>('#pause-banner')!;
 
 const matchHud = document.querySelector<HTMLElement>('#match-hud')!;
 const activeTurnLabel = document.querySelector<HTMLElement>('#active-turn-label')!;
+const btnPassTurn = document.querySelector<HTMLButtonElement>('#btn-pass-turn')!;
 const turnTimerLabel = document.querySelector<HTMLElement>('#turn-timer-label')!;
 const windLabel = document.querySelector<HTMLElement>('#wind-label')!;
-const btnCameraToggle = document.querySelector<HTMLButtonElement>('#btn-camera-toggle')!;
 const btnMatchLeave = document.querySelector<HTMLButtonElement>('#btn-match-leave')!;
 const btnWeaponCrate = document.querySelector<HTMLButtonElement>('#btn-weapon-crate')!;
 const crateWeaponBadge = document.querySelector<HTMLElement>('#crate-weapon-badge')!;
@@ -282,12 +315,11 @@ const matchControls = document.querySelector<HTMLElement>('#match-controls')!;
 
 const entryPanel = document.querySelector<HTMLElement>('#entry-panel')!;
 const teamNameInput = document.querySelector<HTMLInputElement>('#team-name-input')!;
-const roomCodeInput = document.querySelector<HTMLInputElement>('#room-code-input')!;
 const btnCreateRoom = document.querySelector<HTMLButtonElement>('#btn-create-room')!;
-const btnJoinRoom = document.querySelector<HTMLButtonElement>('#btn-join-room')!;
+const availableRoomsList = document.querySelector<HTMLUListElement>('#available-rooms-list')!;
 
 const lobbyPanel = document.querySelector<HTMLElement>('#lobby-panel')!;
-const lobbyRoomCode = document.querySelector<HTMLElement>('#lobby-room-code')!;
+const lobbyHostName = document.querySelector<HTMLElement>('#lobby-host-name')!;
 const lobbyStatusText = document.querySelector<HTMLElement>('#lobby-status-text')!;
 const lobbyPlayers = document.querySelector<HTMLUListElement>('#lobby-players')!;
 const hostSettingsBox = document.querySelector<HTMLElement>('#host-settings')!;
@@ -310,18 +342,17 @@ const btnWeaponGrenade = document.querySelector<HTMLButtonElement>('#btn-weapon-
 const ammoRocketEl = document.querySelector<HTMLElement>('#ammo-rocket')!;
 const ammoGrenadeEl = document.querySelector<HTMLElement>('#ammo-grenade')!;
 const fuseRow = document.querySelector<HTMLElement>('#fuse-row')!;
-const btnJumpLong = document.querySelector<HTMLButtonElement>('#btn-jump-long')!;
-const btnJumpHigh = document.querySelector<HTMLButtonElement>('#btn-jump-high')!;
-const btnFire = document.querySelector<HTMLButtonElement>('#btn-fire')!;
-const chargeFill = document.querySelector<HTMLElement>('#charge-fill')!;
+const btnJumpLeft = document.querySelector<HTMLButtonElement>('#btn-jump-left')!;
+const btnJumpRight = document.querySelector<HTMLButtonElement>('#btn-jump-right')!;
 
 // Client session & game state
 let socket: WebSocket | null = null;
 let connected = false;
 let mySessionId: string | null = null;
 let myTeamId: string | null = null;
-let selectedColorIndex = 0;
+let selectedColorIndex = initialCachedColor;
 
+let availableRooms: PublicRoomSummary[] = [];
 let currentRoomCode: string | null = null;
 let currentRoomStatus: 'waiting' | 'ready' | 'playing' | 'results' | 'closed' | null = null;
 let currentHostSessionId: string | null = null;
@@ -333,27 +364,27 @@ let localWorld: WorldState | null = null;
 let nextCommandSeq = 1;
 
 // Local input & multitouch tracking
-const heldControls = new Map<number, 'left' | 'right' | 'aim-up' | 'aim-down'>();
+const heldControls = new Map<number, 'left' | 'right'>();
 let currentMoveDir: -1 | 0 | 1 = 0;
 let localAimAngleDeg = 20;
 let localFacing: -1 | 1 = 1;
 let localSelectedWeapon: WeaponKind = 'rocket';
 let localGrenadeFuseSec: 1 | 2 | 3 | 4 | 5 = 3;
-let fireChargeStartMs: number | null = null;
-let fireChargePointerId: number | null = null;
 let currentChargePower: number | null = null;
+let lastAimSentAtMs = 0;
 
-// Instantiate full-screen Match Renderer
+// Instantiate full-screen Match Renderer with Angry Birds slingshot callbacks
 const { createMatchRenderer } = await import('./renderer');
 const renderer = createMatchRenderer('field', {
-  onCanvasAimChange: (angleDeg, facing) => {
+  onSlingshotAim: (angleDeg, facing, power) => {
     if (!isMyTurnInControl()) return;
     localAimAngleDeg = angleDeg;
     localFacing = facing;
+    currentChargePower = power;
+    weaponDrawer.hidden = true;
     syncLocalAimFeedback();
     const now = performance.now();
-    if (now - lastAimSentAtMs >= 80) {
-      lastAimSentDeg = localAimAngleDeg;
+    if (power !== null && now - lastAimSentAtMs >= 80) {
       lastAimSentAtMs = now;
       sendMatchCommand({
         kind: 'aim',
@@ -361,6 +392,24 @@ const renderer = createMatchRenderer('field', {
         facing: localFacing,
       });
     }
+  },
+  onSlingshotReleaseFire: (angleDeg, facing, power) => {
+    if (!isMyTurnInControl()) return;
+    localAimAngleDeg = angleDeg;
+    localFacing = facing;
+    currentChargePower = null;
+    syncLocalAimFeedback();
+    sound.play('launch');
+    sendMatchCommand({
+      kind: 'fire',
+      weapon: localSelectedWeapon,
+      angleDeg: Math.round(angleDeg),
+      facing,
+      power: Math.min(1000, Math.max(120, Math.round(power))),
+      ...(localSelectedWeapon === 'grenade'
+        ? { grenadeFuseSeconds: localGrenadeFuseSec }
+        : {}),
+    });
   },
 });
 
@@ -375,6 +424,13 @@ btnReloadApp.addEventListener('click', () => {
 
 btnWeaponCrate.addEventListener('click', () => {
   weaponDrawer.hidden = !weaponDrawer.hidden;
+});
+
+// Top-left circular timer with arrows passes/skips your turn when pressed
+btnPassTurn.addEventListener('click', () => {
+  if (!isMyTurnInControl()) return;
+  sound.play('turn');
+  sendMatchCommand({ kind: 'skipTurn' });
 });
 
 function sendClientMessage(msg: ClientMessage): void {
@@ -416,48 +472,85 @@ function showError(messageUk: string, requiresReload = false): void {
   }
 }
 
+// Persist player name and 10-color choice in device cache (localStorage)
+teamNameInput.addEventListener('input', () => {
+  savePlayerPreferences(teamNameInput.value, selectedColorIndex);
+});
+
 document.querySelectorAll<HTMLButtonElement>('.color-dot').forEach((chip) => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('.color-dot').forEach((c) => c.classList.remove('selected-chip'));
     chip.classList.add('selected-chip');
     selectedColorIndex = Number(chip.dataset.color ?? 0);
-    const preset = TEAM_PRESETS_UK[selectedColorIndex] ?? TEAM_PRESETS_UK[0];
-    if (
-      TEAM_PRESETS_UK.some((p) => p.name === teamNameInput.value.trim()) ||
-      !teamNameInput.value.trim()
-    ) {
-      teamNameInput.value = preset.name;
-    }
+    savePlayerPreferences(teamNameInput.value, selectedColorIndex);
   });
 });
+
+function resolveChosenPlayerName(): string | null {
+  const typed = teamNameInput.value.trim();
+  if (typed.length > 0) {
+    savePlayerPreferences(typed, selectedColorIndex);
+    return typed;
+  }
+  showError('Спочатку введи своє ім’я!');
+  teamNameInput.focus();
+  return null;
+}
 
 btnCreateRoom.addEventListener('click', () => {
   errorBanner.hidden = true;
+  const playerName = resolveChosenPlayerName();
+  if (!playerName) return;
   const preset = TEAM_PRESETS_UK[selectedColorIndex] ?? TEAM_PRESETS_UK[0];
   sendClientMessage({
     type: 'room.create',
-    teamName: teamNameInput.value.trim() || preset.name,
+    teamName: playerName,
     colorIndex: selectedColorIndex,
     hogNames: [...preset.hogs],
   });
 });
 
-btnJoinRoom.addEventListener('click', () => {
+function joinAvailableRoom(roomCode: string): void {
   errorBanner.hidden = true;
-  const code = roomCodeInput.value.trim().toUpperCase();
-  if (code.length < 4) {
-    showError('Введи 4 символи коду кімнати.');
-    return;
-  }
+  const playerName = resolveChosenPlayerName();
+  if (!playerName) return;
   const preset = TEAM_PRESETS_UK[selectedColorIndex] ?? TEAM_PRESETS_UK[0];
   sendClientMessage({
     type: 'room.join',
-    roomCode: code,
-    teamName: teamNameInput.value.trim() || preset.name,
+    roomCode,
+    teamName: playerName,
     colorIndex: selectedColorIndex,
     hogNames: [...preset.hogs],
   });
-});
+}
+
+function renderAvailableRoomsList(): void {
+  if (availableRooms.length === 0) {
+    availableRoomsList.innerHTML = `<li class="empty-rooms-hint">Немає відкритих кімнат — створи нову!</li>`;
+    return;
+  }
+  availableRoomsList.innerHTML = availableRooms
+    .map((room) => {
+      const preset = TEAM_PRESETS_UK[room.colorIndex % TEAM_PRESETS_UK.length]!;
+      const minLeft = Math.max(1, Math.ceil(room.expiresInSeconds / 60));
+      return `
+        <li class="room-list-row">
+          <button type="button" class="room-join-card" data-room-code="${room.roomCode}" style="--team-color: ${preset.hex}">
+            <span class="room-host-title">${preset.symbol} Хост: <strong>${room.hostName}</strong></span>
+            <span class="room-meta-pill">${room.playerCount}/${room.maxPlayers} · ${minLeft} хв</span>
+          </button>
+        </li>
+      `;
+    })
+    .join('');
+
+  availableRoomsList.querySelectorAll<HTMLButtonElement>('.room-join-card').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.roomCode;
+      if (code) joinAvailableRoom(code);
+    });
+  });
+}
 
 btnLeaveRoom.addEventListener('click', () => {
   sendClientMessage({ type: 'room.leave' });
@@ -495,10 +588,6 @@ function onHostSettingsChange(): void {
 settingTurnSec.addEventListener('change', onHostSettingsChange);
 settingHogsCount.addEventListener('change', onHostSettingsChange);
 settingGrenades.addEventListener('change', onHostSettingsChange);
-
-btnCameraToggle.addEventListener('click', () => {
-  renderer.toggleOverview();
-});
 
 btnWeaponRocket.addEventListener('click', () => {
   localSelectedWeapon = 'rocket';
@@ -544,21 +633,26 @@ document.querySelectorAll<HTMLButtonElement>('.fuse-btn').forEach((btn) => {
   });
 });
 
-btnJumpLong.addEventListener('click', () => {
+// Bottom-left top button: Jump Left; Bottom-right top button: Jump Right
+btnJumpLeft.addEventListener('click', () => {
   if (!isMyTurnInControl()) return;
+  localFacing = -1;
+  syncLocalAimFeedback();
   sound.play('jump');
-  sendMatchCommand({ kind: 'jump', jumpKind: 'long' });
+  sendMatchCommand({ kind: 'jump', jumpKind: 'long', facing: -1 });
 });
 
-btnJumpHigh.addEventListener('click', () => {
+btnJumpRight.addEventListener('click', () => {
   if (!isMyTurnInControl()) return;
+  localFacing = 1;
+  syncLocalAimFeedback();
   sound.play('jump');
-  sendMatchCommand({ kind: 'jump', jumpKind: 'high' });
+  sendMatchCommand({ kind: 'jump', jumpKind: 'long', facing: 1 });
 });
 
-// Independent multitouch hold buttons (left, right, aim-up, aim-down)
+// Independent multitouch hold buttons (Move Left, Move Right)
 document.querySelectorAll<HTMLButtonElement>('[data-hold]').forEach((btn) => {
-  const holdKind = btn.dataset.hold as 'left' | 'right' | 'aim-up' | 'aim-down';
+  const holdKind = btn.dataset.hold as 'left' | 'right';
 
   btn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -603,72 +697,14 @@ function syncHeldMovementState(): void {
   }
 }
 
-// Fire button: hold to charge power, release to fire (or quick tap)
-btnFire.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  if (!isMyTurnInControl()) return;
-  try {
-    btnFire.setPointerCapture(e.pointerId);
-  } catch {
-    // ignore
-  }
-  fireChargePointerId = e.pointerId;
-  fireChargeStartMs = performance.now();
-  currentChargePower = 150;
-  btnFire.classList.add('pressed');
-  weaponDrawer.hidden = true;
-  syncLocalAimFeedback();
-});
-
-function finishFireCharge(e: PointerEvent, cancelled: boolean): void {
-  if (fireChargePointerId !== e.pointerId || fireChargeStartMs === null) return;
-  const elapsedMs = performance.now() - fireChargeStartMs;
-  fireChargePointerId = null;
-  fireChargeStartMs = null;
-  btnFire.classList.remove('pressed');
-  chargeFill.style.width = '0%';
-
-  if (cancelled || !isMyTurnInControl()) {
-    currentChargePower = null;
-    syncLocalAimFeedback();
-    return;
-  }
-
-  const power =
-    elapsedMs < 140
-      ? 520
-      : Math.min(1000, Math.max(120, Math.round(120 + (elapsedMs / 1350) * 880)));
-  currentChargePower = null;
-  syncLocalAimFeedback();
-
-  sound.play('launch');
-  sendMatchCommand({
-    kind: 'fire',
-    weapon: localSelectedWeapon,
-    angleDeg: Math.round(localAimAngleDeg),
-    facing: localFacing,
-    power,
-    ...(localSelectedWeapon === 'grenade'
-      ? { grenadeFuseSeconds: localGrenadeFuseSec }
-      : {}),
-  });
-}
-
-btnFire.addEventListener('pointerup', (e) => finishFireCharge(e, false));
-btnFire.addEventListener('pointercancel', (e) => finishFireCharge(e, true));
-
 function clearAllHeldInputs(reason: 'blur' | 'visibility' | 'touch_cancel' | 'manual'): void {
-  const hadInputs =
-    heldControls.size > 0 || currentMoveDir !== 0 || fireChargeStartMs !== null;
+  const hadInputs = heldControls.size > 0 || currentMoveDir !== 0 || currentChargePower !== null;
   heldControls.clear();
   document
     .querySelectorAll('.touch-btn.pressed')
     .forEach((el) => el.classList.remove('pressed'));
   currentMoveDir = 0;
-  fireChargePointerId = null;
-  fireChargeStartMs = null;
   currentChargePower = null;
-  chargeFill.style.width = '0%';
   syncLocalAimFeedback();
 
   if (hadInputs && activeMatchId) {
@@ -686,44 +722,6 @@ document.addEventListener('visibilitychange', () => {
     clearAllHeldInputs('visibility');
   }
 });
-
-let lastAimSentDeg = localAimAngleDeg;
-let lastAimSentAtMs = 0;
-
-setInterval(() => {
-  if (!isMyTurnInControl()) return;
-  const values = Array.from(heldControls.values());
-  let aimChanged = false;
-  if (values.includes('aim-up')) {
-    localAimAngleDeg = Math.min(85, localAimAngleDeg + 1.8);
-    aimChanged = true;
-  }
-  if (values.includes('aim-down')) {
-    localAimAngleDeg = Math.max(-80, localAimAngleDeg - 1.8);
-    aimChanged = true;
-  }
-
-  if (fireChargeStartMs !== null) {
-    const elapsed = performance.now() - fireChargeStartMs;
-    currentChargePower = Math.min(1000, Math.round(120 + (elapsed / 1350) * 880));
-    chargeFill.style.width = `${Math.round((currentChargePower / 1000) * 100)}%`;
-    aimChanged = true;
-  }
-
-  if (aimChanged) {
-    syncLocalAimFeedback();
-    const now = performance.now();
-    if (Math.abs(localAimAngleDeg - lastAimSentDeg) >= 3 && now - lastAimSentAtMs >= 90) {
-      lastAimSentDeg = localAimAngleDeg;
-      lastAimSentAtMs = now;
-      sendMatchCommand({
-        kind: 'aim',
-        angleDeg: Math.round(localAimAngleDeg),
-        facing: localFacing,
-      });
-    }
-  }
-}, 25);
 
 function syncLocalAimFeedback(): void {
   if (!localWorld || !isMyTurnInControl() || !localWorld.activeCharacterId) {
@@ -756,11 +754,14 @@ function updatePanels(): void {
     pauseBanner.hidden = true;
     weaponDrawer.hidden = true;
     renderer.setWorldState(null, null);
+    renderAvailableRoomsList();
     return;
   }
 
   if (isLobby) {
-    lobbyRoomCode.textContent = currentRoomCode!;
+    const hostPlayer =
+      currentPlayers.find((p) => p.sessionId === currentHostSessionId) ?? currentPlayers[0];
+    lobbyHostName.textContent = hostPlayer?.teamName ?? '---';
     const isHost = currentHostSessionId === mySessionId;
     hostSettingsBox.hidden = !isHost;
     btnStartMatch.hidden = !isHost;
@@ -780,11 +781,11 @@ function updatePanels(): void {
     }
 
     if (currentPlayers.length < 2) {
-      lobbyStatusText.textContent = 'Чекаємо 2–4 гравців';
+      lobbyStatusText.textContent = `Чекаємо гравців (1/${MAX_ROOM_PLAYERS})`;
     } else if (currentRoomStatus === 'ready') {
       lobbyStatusText.textContent = isHost ? 'Усі готові!' : 'Чекаємо старт…';
     } else {
-      lobbyStatusText.textContent = 'Натисни «Готовий»';
+      lobbyStatusText.textContent = `Гравців: ${currentPlayers.length}/${MAX_ROOM_PLAYERS}`;
     }
 
     lobbyPlayers.innerHTML = currentPlayers
@@ -824,6 +825,7 @@ function updatePanels(): void {
 
     const secLeft = Math.max(0, Math.ceil(localWorld.turnTicksRemaining / TICKS_PER_SECOND));
     turnTimerLabel.textContent = String(secLeft);
+    btnPassTurn.disabled = !myTurn;
 
     const windPct = Math.round((localWorld.wind / 0.069444) * 100);
     const windDir = windPct > 5 ? '▶' : windPct < -5 ? '◀' : '•';
@@ -939,6 +941,13 @@ function handleServerMessage(msg: ServerMessage): void {
         sendClientMessage({ type: 'client.ping', clientTimeMs: Date.now() });
       }, 4000);
       sendClientMessage({ type: 'client.ping', clientTimeMs: Date.now() });
+      sendClientMessage({ type: 'room.list' });
+      break;
+    }
+
+    case 'rooms.list': {
+      availableRooms = msg.rooms;
+      renderAvailableRoomsList();
       break;
     }
 
@@ -982,6 +991,10 @@ function handleServerMessage(msg: ServerMessage): void {
       currentPlayers = [];
       activeMatchId = null;
       localWorld = null;
+      if (msg.reason === 'expired') {
+        showError('Кімнату закрито через неактивність.');
+      }
+      sendClientMessage({ type: 'room.list' });
       updatePanels();
       break;
     }
@@ -1059,15 +1072,17 @@ function handleServerMessage(msg: ServerMessage): void {
       localWorld.characters = msg.characters;
       localWorld.projectiles = msg.projectiles;
 
-      if (msg.activeCharacterId && msg.activeCharacterId !== lastObservedActiveCharId) {
+      const switchedTurnChar =
+        Boolean(msg.activeCharacterId) && msg.activeCharacterId !== lastObservedActiveCharId;
+      if (switchedTurnChar && msg.activeCharacterId) {
         lastObservedActiveCharId = msg.activeCharacterId;
         const activeChar = localWorld.characters.find((c) => c.id === msg.activeCharacterId);
         if (activeChar) {
           localAimAngleDeg = activeChar.aimAngleDeg;
           localFacing = activeChar.facing;
         }
+        currentChargePower = null;
         sound.play('turn');
-        renderer.focusActiveEntity();
       }
 
       for (const ev of msg.events) {
@@ -1088,6 +1103,9 @@ function handleServerMessage(msg: ServerMessage): void {
             }
           : null,
       );
+      if (switchedTurnChar) {
+        renderer.focusActiveEntity();
+      }
       updatePanels();
       break;
     }
@@ -1116,6 +1134,8 @@ connectWebSocket();
   getTerrainChecksum: () => localWorld?.terrain.checksum ?? null,
   getWorldChecksum: () => (localWorld ? computeWorldChecksum(localWorld) : null),
   getDirtyChunkUpdates: () => renderer.getDirtyChunkUpdateCount(),
+  getCameraZoom: () => renderer.getCameraZoom(),
+  getActiveCharacterScreenPoint: () => renderer.getActiveCharacterScreenPoint(),
 };
 
 window.addEventListener(
