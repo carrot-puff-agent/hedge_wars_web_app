@@ -3,3 +3,4 @@ export * from './rng';
 export * from './state';
 export * from './terrain';
 export * from './collision';
+export * from './character';

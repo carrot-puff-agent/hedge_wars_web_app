@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import {
   carveCrater,
+  computeFallDamage,
   computeWorldChecksum,
   consumeDirtyChunks,
   createCharacterState,
@@ -13,14 +14,18 @@ import {
   editTerrainRect,
   getTerrainCell,
   GRAVITY_PER_TICK,
+  isCharacterSettled,
   isCoordInWater,
   loadTerrainMask,
   MAX_LAUNCH_SPEED_PER_TICK,
   MAX_WIND_ACCEL_PER_TICK,
   MS_PER_TICK,
+  refreshCharacterGrounding,
   rollSeededWind,
   SeededRng,
   serializeWorldState,
+  startCharacterJump,
+  stepCharacterPhysics,
   TERRAIN_INDESTRUCTIBLE,
   TERRAIN_SOLID,
   testCollisionX,
@@ -324,4 +329,75 @@ test('SIM-04: terrain/object collision and swept/substep projectile checks preve
   const segHit = testSegmentCircleIntersection(50, 60, 120, 60, 4, target);
   assert.equal(segHit.hit, true);
   assert.ok(Math.abs(segHit.hitX - (95 - (9 + 4))) < 1e-6);
+});
+
+test('SIM-05: character grounding, slope movement, jump, removed support, fall damage and drowning', () => {
+  // Build a staircase/slope + ledge + lower floor (>160px drop for fall damage) + water basin
+  const terrain = loadTerrainMask({
+    width: 320,
+    height: 300,
+    waterLine: 265,
+    shapes: [
+      // Left platform y=50..200, x=20..100
+      { kind: 'rect', x: 20, y: 50, width: 80, height: 150, value: TERRAIN_SOLID },
+      // Gentle 3px upward step at x=60..100 (top at y=47)
+      { kind: 'rect', x: 60, y: 47, width: 40, height: 3, value: TERRAIN_SOLID },
+      // Lower landing platform y=235..255, x=100..220 (188px drop from y=47 -> exceeds 160px fall-damage threshold)
+      { kind: 'rect', x: 100, y: 235, width: 120, height: 20, value: TERRAIN_SOLID },
+    ],
+  });
+
+  const hog = createCharacterState({
+    id: 'hog-1',
+    teamId: 't1',
+    name: 'Колючка',
+    x: 40,
+    y: 41, // radius 9 -> bottom at y=50
+    facing: 1,
+  });
+  refreshCharacterGrounding(terrain, hog, 2);
+  assert.equal(hog.grounded, true);
+
+  // Walk right across the 3px step up at x=60 and off the ledge at x=100
+  hog.moveInput = 1;
+  const events: import('../01_hedge_wars/packages/simulation/src/index').SimulationEvent[] = [];
+  let climbedStep = false;
+  for (let tick = 1; tick <= 260; tick++) {
+    stepCharacterPhysics(terrain, hog, tick, events, true);
+    if (hog.x >= 65 && hog.x <= 85 && hog.y < 41) {
+      climbedStep = true;
+    }
+    if (hog.x >= 108 && hog.grounded && hog.y > 220) {
+      break;
+    }
+  }
+  assert.equal(climbedStep, true, 'Character should climb the 3px slope step');
+  assert.equal(hog.grounded, true, 'Character should land on the lower platform');
+  assert.ok(hog.y > 220, `Expected hog to land near y=226, got y=${hog.y}`);
+  assert.ok(hog.health < 100, `Expected fall damage from 188px cliff drop, health=${hog.health}`);
+  assert.ok(events.some((e) => e.type === 'character.damaged' && e.cause === 'fall'));
+
+  // Test long jump from the lower platform
+  hog.moveInput = 0;
+  const xBeforeJump = hog.x;
+  const jumped = startCharacterJump(terrain, hog, 'long', 300, events);
+  assert.equal(jumped, true);
+  assert.equal(hog.grounded, false);
+  for (let tick = 301; tick <= 360; tick++) {
+    stepCharacterPhysics(terrain, hog, tick, events, true);
+    if (isCharacterSettled(hog)) break;
+  }
+  assert.ok(hog.x > xBeforeJump + 15, 'Long jump should advance character horizontally');
+
+  // Remove support directly beneath character with a crater -> character must fall and drown in water
+  carveCrater(terrain, hog.x, hog.y + 12, 28);
+  for (let tick = 400; tick <= 520; tick++) {
+    stepCharacterPhysics(terrain, hog, tick, events, false);
+    if (!hog.alive) break;
+  }
+  assert.equal(hog.alive, false, 'Character should drown after falling past waterLine=265');
+  assert.equal(hog.health, 0);
+  assert.ok(events.some((e) => e.type === 'character.drowned'));
+  assert.ok(events.some((e) => e.type === 'character.eliminated' && e.cause === 'water'));
+  assert.ok(computeFallDamage(10) > 0);
 });
