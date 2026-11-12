@@ -1,6 +1,6 @@
 # Current handoff — read before continuing
 
-Updated: 2026-11-12. Latest session: `2026-11-12-phase1-simulation`.
+Updated: 2026-11-12. Latest session: `2026-11-12-multiplayer-playable`.
 
 ## Paths and starting commands
 
@@ -12,9 +12,9 @@ Updated: 2026-11-12. Latest session: `2026-11-12-phase1-simulation`.
 
 ## Current implementation
 
-Local foundation and Phase 1 pure simulation (`@yizhaklub/hedge-simulation`, `SIM-01`–`SIM-07`, gates `SIM-A01`–`SIM-A06`) are complete and verified. Hub/game preview and a typed hello are present in the browser client, and the pure simulation package implements 60 Hz world state, RLE terrain snapshots, 32×32 dirty chunk revision tracking, Bresenham craters, swept collision, slope movement/jump/falling/drowning, impact rockets, timed bouncing grenades, radial damage/knockback and settling.
+Local foundation, Phase 1 pure simulation (`@yizhaklub/hedge-simulation`, `SIM-01`–`SIM-07`), Phase 2 multiplayer networking (`NET-01`–`NET-08`), Phase 3 playable client (`UI-01`–`UI-03`, `UI-05`, and remote interpolation/local aim feedback in `UI-04`), and Phase 4 game loop (`GAME-01`–`GAME-03`) are implemented and verified by automated Node and multi-browser tests.
 
-Room/session lifecycle, reconnect, authoritative server match runner (`NET-01`–`NET-08`) and playable client match rendering (`UI-01`–`UI-06`) remain unimplemented. Do not advertise playable multiplayer until those gates pass. A versioned PWA shell worker exists; the user confirmed Samsung installation, while match-aware updates remain unverified. Code ports `PORT-01`–`PORT-04` are recorded in `REUSE_PLAN.md` with GPL-2.0 license text at `licenses/hedgewars-GPL-2.0.txt`.
+Players can open `/games/hedge-wars/`, create or join a private 2–4 player room via a 4-character room code, customize their Ukrainian team name/color/symbol (`●`, `▲`, `■`, `◆`), configure host settings (turn duration, hedgehogs per team, grenade ammo), ready up, and play an authoritative 60 Hz match on the curated `2048x1024` «Сонячна галявина» map (`meadow-boulders`) with impact rockets, timed bouncing grenades, incremental changed-region crater rendering, multitouch controls, gesture-gated sound effects (`UPSTREAM-01`), disconnect pause/reconnect (`resumeToken`), victory standings and rematch. Real Android device touch/FPS verification (`UI-06`) and four-human-device playtesting (`GAME-04`) are ready to be performed by the user.
 
 ## Decisions
 
@@ -23,8 +23,8 @@ Parent root is intentionally the Git root so hub and future games are versioned 
 ## Verification and blockers
 
 - Clean `npm ci` / `npm ls` passed with `@yizhaklub/hedge-simulation` linked in the root workspace.
-- `npm run check` passed: strict types, 10 contract/server/simulation tests (`tests/protocol.test.ts`, `tests/server.test.ts`, `tests/simulation.test.ts`), doc validation (46 unique tasks) and all production builds.
-- `LD_LIBRARY_PATH=/home/dev/.cache/hedge-playwright-deps/root/usr/lib/x86_64-linux-gnu npm run test:e2e`: all 10 desktop and 360px Android-emulation browser tests passed.
+- `npm run check` passed: strict types, 13 contract/server/simulation/network tests (`tests/protocol.test.ts`, `tests/server.test.ts`, `tests/simulation.test.ts`, `tests/network.test.ts`), doc validation (46 unique tasks) and all production builds.
+- `LD_LIBRARY_PATH=/home/dev/.cache/hedge-playwright-deps/root/usr/lib/x86_64-linux-gnu npm run test:e2e`: all 12 desktop and 360px Android-emulation browser tests passed (including 4-browser room -> match -> crater convergence -> results -> rematch in `tests/browser/multiplayer.spec.ts`).
 - `npm run test:dev`: four tests passed through Vite proxies/HMR at foundation setup. Graceful teardown confirmed all four application/test ports closed.
 - Visual review: original Ukrainian desktop/mobile hub and workshop; screenshots under ignored `.local/screenshots/`.
 - Dedicated LXC `192.168.1.70:9999`: `yizhaklub.service` enabled and active, sources `/home/dev/games-web-app`. LXC clean install/check/build and HTTP/WSS checks passed. See `docs/OPERATIONS.md` at the repository root.
@@ -37,7 +37,7 @@ Parent root is intentionally the Git root so hub and future games are versioned 
 
 ## Next actions
 
-Begin Phase 2 (`NET-01`–`NET-08`) on the LXC: extend/version `@yizhaklub/hedge-protocol` contracts for sessions, private 2–4 player rooms, owned inputs, snapshots, events and terrain revisions, then implement room management (`NET-02`) and the authoritative 60 Hz server match runner (`NET-03`) backed by `@yizhaklub/hedge-simulation`. (Renderer work `UI-01` is also unblocked now that `SIM-03` is complete.)
+Test the deployed playable build on the family Android phones (`UI-06`, `GAME-04`, `OPS-03`, `OPS-04`): verify multitouch movement + aim/fire, measure real-route RTT/FPS on the oldest family phone, and run a complete 2–4 device match through victory and rematch.
 
 ## Processes
 

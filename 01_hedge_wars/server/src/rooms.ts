@@ -611,16 +611,11 @@ export class RoomManager {
 
     if (!room) return;
 
+    room.players = room.players.filter((p) => p.sessionId !== session.sessionId);
+
     if (room.status === 'playing' && room.activeMatch && oldTeamId) {
-      const player = room.players.find((p) => p.sessionId === session.sessionId);
-      if (player) {
-        player.connected = false;
-        player.forfeited = true;
-      }
       this.forfeitTeamInMatch(room, room.activeMatch, oldTeamId);
     }
-
-    room.players = room.players.filter((p) => p.sessionId !== session.sessionId);
 
     if (room.players.length === 0 || room.players.every((p) => !p.connected && p.forfeited)) {
       this.closeRoom(room);

@@ -1,6 +1,6 @@
 # Ordered implementation checklist
 
-Canonical task list. `[ ]` TODO · `[~]` IN PROGRESS · `[x]` DONE · `[!]` BLOCKED. Stable IDs are referenced in acceptance criteria and session logs. Mark done with evidence; leave manual gates open. Current session: `2026-11-12-phase1-simulation`.
+Canonical task list. `[ ]` TODO · `[~]` IN PROGRESS · `[x]` DONE · `[!]` BLOCKED. Stable IDs are referenced in acceptance criteria and session logs. Mark done with evidence; leave manual gates open. Current session: `2026-11-12-multiplayer-playable`.
 
 ## Phase 0 — reproducible project foundation
 
@@ -32,33 +32,33 @@ Dependencies: FND-01–FND-06. Gate: SIM-A01–SIM-A06.
 
 Dependencies: Phase 1. Gate: NET-A01–NET-A07. Build multiplayer before expanding the weapon catalogue.
 
-- [ ] NET-01 — Extend/version contracts for sessions, rooms, inputs, snapshots, events and terrain revisions.
-- [ ] NET-02 — Create/join private room, own team, ready, start, leave; enforce 2–4 player capacity and room isolation.
-- [ ] NET-03 — Add authoritative fixed-step match runner, command ownership/order/duplicate checks and state delivery.
-- [ ] NET-04 — Implement heartbeat, bounded reconnect, input release, grace period and documented pause/forfeit rules.
-- [ ] NET-05 — Add full reconnect snapshots and terrain revision/checksum recovery.
-- [ ] NET-06 — Reject incompatible protocol/rules/content versions before start; Ukrainian reload/error flow.
-- [ ] NET-07 — Prove two browser clients, then four, exchange owned inputs and converge to server simulation/terrain state. Record delayed/lost-connection tests and payload/tick metrics. Full-match completion is GAME-04.
-- [ ] NET-08 — Validate limits, session ownership and safe logs; authorize exposure to external clients only when ready.
+- [x] NET-01 — Extend/version contracts for sessions, rooms, inputs, snapshots, events and terrain revisions. Verified in `tests/protocol.test.ts` and `tests/network.test.ts`.
+- [x] NET-02 — Create/join private room, own team, ready, start, leave; enforce 2–4 player capacity and room isolation. NET-A01: 2–4 sessions create/join/ready/start, 5th rejected (`ROOM_FULL`), rooms isolated in `tests/network.test.ts`.
+- [x] NET-03 — Add authoritative fixed-step match runner, command ownership/order/duplicate checks and state delivery. NET-A02: wrong-owner, stale (`STALE_COMMAND`), duplicate and out-of-turn (`NOT_YOUR_TURN`) commands rejected in `tests/network.test.ts`.
+- [x] NET-04 — Implement heartbeat, bounded reconnect, input release, grace period and documented pause/forfeit rules. NET-A04: ping/pong, immediate disconnect/blur input release, 120s reconnect grace with pause-on-disconnect and resume token verified in `tests/network.test.ts`.
+- [x] NET-05 — Add full reconnect snapshots and terrain revision/checksum recovery. NET-A05: `match.request_snapshot` repairs simulated revision gap to exact server terrain/world checksum in `tests/network.test.ts`.
+- [x] NET-06 — Reject incompatible protocol/rules/content versions before start; Ukrainian reload/error flow. NET-A06: `PROTOCOL_MISMATCH`, `RULES_MISMATCH` and `CONTENT_MISMATCH` rejected with Ukrainian messages and reload prompt in `tests/server.test.ts` and `tests/network.test.ts`.
+- [x] NET-07 — Prove two browser clients, then four, exchange owned inputs and converge to server simulation/terrain state. Record delayed/lost-connection tests and payload/tick metrics. Full-match completion is GAME-04. NET-A03: 4 WebSocket clients (`tests/network.test.ts`) and 4 Playwright browser clients (`tests/browser/multiplayer.spec.ts`) converge to identical terrain/world checksums after rocket crater resolution.
+- [x] NET-08 — Validate limits, session ownership and safe logs; authorize exposure to external clients only when ready. NET-A07: rate limits, sanitised names/codes and log audit (no `resumeToken` in logs) verified in `tests/network.test.ts`.
 
 ## Phase 3 — playable Android client
 
 Dependencies: Phase 2; renderer can begin after SIM-03. Gate: UI-A01–UI-A06.
 
-- [ ] UI-01 — Replace workshop preview with match renderer, changed-region terrain textures and camera behavior.
-- [ ] UI-02 — Add Ukrainian room/lobby/team/weapon/results flows with honest connection and loading states.
-- [ ] UI-03 — Add independent multitouch movement/aim/fire/charging controls, cancellation and safe-area support.
-- [ ] UI-04 — Interpolate remote motion; measure real-route control latency and add/reconcile prediction where justified.
-- [ ] UI-05 — Add licensed audio/animations, mute, readable team identity and reduced-motion behavior.
+- [x] UI-01 — Replace workshop preview with match renderer, changed-region terrain textures and camera behavior. Implemented in `01_hedge_wars/client/src/renderer.ts` with incremental crater bounding-box `putImageData` updates and follow/pan/overview camera modes; verified in `tests/browser/multiplayer.spec.ts`.
+- [x] UI-02 — Add Ukrainian room/lobby/team/weapon/results flows with honest connection and loading states. Implemented in `01_hedge_wars/client/src/main.ts` and `style.css`; verified across desktop and 360px mobile browser suites.
+- [x] UI-03 — Add independent multitouch movement/aim/fire/charging controls, cancellation and safe-area support. UI-A01: all `.touch-btn` controls >=48x48px, pointer-captured by `pointerId`, auto-released on blur/visibility/cancel; real Android multitouch verification remains open under `UI-06`.
+- [~] UI-04 — Interpolate remote motion; measure real-route control latency and add/reconcile prediction where justified. 60 FPS remote entity interpolation and zero-RTT local aim/power-charge feedback implemented; real-route latency measurement on actual phones remains open.
+- [x] UI-05 — Add licensed audio/animations, mute, readable team identity and reduced-motion behavior. UI-A04: gesture-gated Hedgewars `.ogg` clips + Web Audio fallback (`UPSTREAM-01`), Ukrainian mute toggle, team symbol+color badges (`●`, `▲`, `■`, `◆`) and `prefers-reduced-motion` support implemented.
 - [ ] UI-06 — Test on the actual oldest family Android phone and another phone; record models, Chrome versions and touch observations.
 
 ## Phase 4 — complete game loop
 
 Dependencies: Phases 1–3. Gate: GAME-A01–GAME-A04.
 
-- [ ] GAME-01 — Implement server turn state machine, timer, pending resolution, elimination and victory.
-- [ ] GAME-02 — Finish configurable defaults, team inventories and one curated map/content manifest.
-- [ ] GAME-03 — Results, rematch and return-to-hub without duplicate listeners or leaked rooms/processes.
+- [x] GAME-01 — Implement server turn state machine, timer, pending resolution, elimination and victory. GAME-A01/GAME-A02: server turn lifecycle (`select -> control -> resolve -> settle -> finished`), post-shot settling and elimination/victory verified in `tests/network.test.ts` and `tests/browser/multiplayer.spec.ts`.
+- [x] GAME-02 — Finish configurable defaults, team inventories and one curated map/content manifest. `CURATED_MAP_MEADOW` (`meadow-boulders`, `2048x1024`) and configurable turn/hog/ammo settings implemented in `maps.ts` and `rooms.ts`.
+- [x] GAME-03 — Results, rematch and return-to-hub without duplicate listeners or leaked rooms/processes. GAME-A03: victory standings, `room.rematch` and room leave verified in `tests/network.test.ts` and `tests/browser/multiplayer.spec.ts`.
 - [ ] GAME-04 — Run complete four-human-device matches including elimination, simultaneous effects, reconnect, victory and rematch.
 
 ## Phase 5 — PWA and own-server release
