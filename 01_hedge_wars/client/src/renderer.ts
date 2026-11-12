@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import {
   GRAVITY_PER_TICK,
+  MAX_LAUNCH_SPEED_PER_TICK,
+  MAX_POWER,
+  MAX_SPEED_PER_TICK,
   TERRAIN_EMPTY,
   TERRAIN_INDESTRUCTIBLE,
   buildCuratedMapTerrain,
@@ -11,7 +14,9 @@ import {
   type WorldState,
 } from '@yizhaklub/hedge-simulation';
 
-const MAX_LAUNCH_SPEED = 11.5;
+const ROOM_SKY_TOP_Y = -180;
+const ROOM_WATER_BOTTOM_PAD = 100;
+const TOTAL_TRAJECTORY_TICKS = 75;
 
 export interface LocalAimFeedback {
   characterId: string;
@@ -188,6 +193,9 @@ export function createMatchRenderer(
     private overviewMode = false;
     private userZoomOverride: number | null = null;
     private manualPanUntilMs = 0;
+    private actionFocusPoint: { x: number; y: number } | null = null;
+    private actionHoldUntilMs = 0;
+    private trackedThrownCharId: string | null = null;
     private readonly activeTouchPoints = new Map<number, { x: number; y: number }>();
     private dragState:
       | {
@@ -218,11 +226,12 @@ export function createMatchRenderer(
     create() {
       const worldW = initialMap.terrain.width;
       const worldH = initialMap.terrain.height;
+      const totalRoomH = worldH - ROOM_SKY_TOP_Y + ROOM_WATER_BOTTOM_PAD;
 
       // Bright clear blue sky and soft cartoon clouds matching gameplay ui sample.jpg
       const bg = this.add.graphics();
       bg.fillGradientStyle(0x6ab3e8, 0x6ab3e8, 0xc4e5f8, 0xc4e5f8, 1);
-      bg.fillRect(0, 0, worldW, worldH + 120);
+      bg.fillRect(0, ROOM_SKY_TOP_Y, worldW, totalRoomH);
 
       // Soft puffy clouds
       bg.fillStyle(0xe8f5fc, 0.85)
@@ -249,28 +258,32 @@ export function createMatchRenderer(
       this.entityGraphics = this.add.graphics();
       this.waterGraphics = this.add.graphics();
 
-      this.cameras.main.setBounds(0, 0, worldW, worldH + 100);
+      this.cameras.main.setBounds(0, ROOM_SKY_TOP_Y, worldW, totalRoomH);
       this.applyResponsiveZoom(true);
       this.cameras.main.centerOn(760, 680);
 
       this.scale.on('resize', () => {
+        if (this.userZoomOverride !== null) {
+          this.userZoomOverride = Math.max(this.getMinRoomZoom(), this.userZoomOverride);
+        }
         this.applyResponsiveZoom(false);
       });
 
-      // Mouse wheel zoom support
+      // Mouse wheel zoom support (clamped so zoom-out stops when room edges reach screen sides)
       this.input.on(
         'wheel',
         (_pointer: Phaser.Input.Pointer, _objs: unknown[], _dx: number, dy: number) => {
-          const factor = dy > 0 ? 0.9 : 1.1;
-          const nextZoom = Phaser.Math.Clamp(this.cameras.main.zoom * factor, 0.38, 1.65);
+          const factor = dy > 0 ? 0.92 : 1.08;
+          const minZoom = this.getMinRoomZoom();
+          const nextZoom = Phaser.Math.Clamp(this.cameras.main.zoom * factor, minZoom, 1.65);
           this.userZoomOverride = nextZoom;
           this.cameras.main.setZoom(nextZoom);
         },
       );
 
       // Multitouch gesture handling:
-      // - 2 fingers: pinch zoom
-      // - 1 finger on active character + move: Angry Birds pull-back aiming, release fires
+      // - 2 fingers: pinch zoom (stops at room edges)
+      // - 1 finger on active character + move: smooth Angry Birds pull-back aiming, release fires
       // - 1 finger elsewhere + move: screen pan
       this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
         this.activeTouchPoints.set(pointer.id, { x: pointer.x, y: pointer.y });
@@ -290,7 +303,7 @@ export function createMatchRenderer(
         }
 
         if (this.currentWorld && this.localAim) {
-          const activePos = this.charPositions.get(this.localAim.characterId);
+          const activePos = this.getAuthoritativeOrInterpolatedCharPos(this.localAim.characterId);
           if (activePos) {
             const worldPt = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
             if (Math.hypot(worldPt.x - activePos.x, worldPt.y - activePos.y) <= 85) {
@@ -327,9 +340,10 @@ export function createMatchRenderer(
         if (this.dragState.mode === 'pinch' && this.activeTouchPoints.size >= 2) {
           const pts = Array.from(this.activeTouchPoints.values());
           const dist = Math.max(10, Math.hypot(pts[1]!.x - pts[0]!.x, pts[1]!.y - pts[0]!.y));
+          const minZoom = this.getMinRoomZoom();
           const nextZoom = Phaser.Math.Clamp(
             this.dragState.startZoom * (dist / this.dragState.startDist),
-            0.38,
+            minZoom,
             1.65,
           );
           this.userZoomOverride = nextZoom;
@@ -342,7 +356,7 @@ export function createMatchRenderer(
           this.dragState.pointerId === pointer.id &&
           this.localAim
         ) {
-          const activePos = this.charPositions.get(this.localAim.characterId);
+          const activePos = this.getAuthoritativeOrInterpolatedCharPos(this.localAim.characterId);
           if (activePos) {
             const worldPt = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
             this.updateSlingshotFromWorldPoint(activePos, worldPt.x, worldPt.y);
@@ -369,7 +383,7 @@ export function createMatchRenderer(
         if (this.dragState.mode === 'aim' && this.dragState.pointerId === pointer.id) {
           const { angleDeg, facing, power } = this.dragState;
           this.dragState = null;
-          if (!cancelled && power !== null && power >= 140) {
+          if (!cancelled && power !== null && power >= 120) {
             options?.onSlingshotReleaseFire?.(angleDeg, facing, power);
           } else {
             options?.onSlingshotAim?.(angleDeg, facing, null);
@@ -392,10 +406,31 @@ export function createMatchRenderer(
       this.game.canvas.setAttribute('aria-hidden', 'true');
     }
 
+    private getAuthoritativeOrInterpolatedCharPos(
+      charId: string,
+    ): { x: number; y: number } | null {
+      const auth = this.currentWorld?.characters.find((c) => c.id === charId);
+      if (auth) return { x: auth.x, y: auth.y };
+      const interp = this.charPositions.get(charId);
+      return interp ? { x: interp.x, y: interp.y } : null;
+    }
+
     /**
-     * Angry Birds slingshot mechanics:
+     * Minimum zoom so zooming out stops immediately when the room edges reach the screen sides.
+     */
+    private getMinRoomZoom(): number {
+      const worldW = this.currentWorld?.terrain.width ?? initialMap.terrain.width;
+      const worldH = this.currentWorld?.terrain.height ?? initialMap.terrain.height;
+      const totalRoomH = worldH - ROOM_SKY_TOP_Y + ROOM_WATER_BOTTOM_PAD;
+      const viewW = this.scale.width || window.innerWidth || 960;
+      const viewH = this.scale.height || window.innerHeight || 540;
+      return Math.max(viewW / worldW, viewH / totalRoomH);
+    }
+
+    /**
+     * Smooth continuous Angry Birds slingshot mechanics:
      * Pull away from the character; launch trajectory points in the opposite direction.
-     * The farther you pull, the higher the kinetic energy (power) and the longer the trajectory dashes.
+     * No integer grid rounding — angleDeg and power vary smoothly with sub-degree precision.
      */
     private updateSlingshotFromWorldPoint(
       charPos: { x: number; y: number },
@@ -410,7 +445,7 @@ export function createMatchRenderer(
       this.dragState.pullWorldX = worldX;
       this.dragState.pullWorldY = worldY;
 
-      if (pullDist < 12) {
+      if (pullDist < 10) {
         this.dragState.power = null;
         options?.onSlingshotAim?.(this.dragState.angleDeg, this.dragState.facing, null);
         return;
@@ -421,11 +456,11 @@ export function createMatchRenderer(
       const elevationUp = pullDy;
       const facing: -1 | 1 = launchDx >= 0 ? 1 : -1;
       const rawDeg = (Math.atan2(elevationUp, Math.abs(launchDx)) * 180) / Math.PI;
-      const clampedDeg = Math.max(-80, Math.min(85, Math.round(rawDeg)));
+      const clampedDeg = Math.max(-85, Math.min(85, rawDeg));
 
-      const maxPullDist = 145;
-      const ratio = Math.min(1, (pullDist - 12) / (maxPullDist - 12));
-      const power = Math.round(140 + ratio * 860);
+      const maxPullDist = 150;
+      const ratio = Math.min(1, (pullDist - 10) / (maxPullDist - 10));
+      const power = 120 + ratio * 880;
 
       this.dragState.angleDeg = clampedDeg;
       this.dragState.facing = facing;
@@ -434,20 +469,20 @@ export function createMatchRenderer(
     }
 
     private getDesiredPlayZoom(): number {
+      const minZoom = this.getMinRoomZoom();
       if (this.userZoomOverride !== null) {
-        return this.userZoomOverride;
+        return Math.max(minZoom, Math.min(1.65, this.userZoomOverride));
       }
       const w = this.scale.width || window.innerWidth;
       const h = this.scale.height || window.innerHeight;
-      return Math.max(0.58, Math.min(1.15, Math.min(w / 1150, h / 620)));
+      return Math.max(minZoom, Math.min(1.15, Math.min(w / 1150, h / 620)));
     }
 
     private applyResponsiveZoom(immediate: boolean): void {
       const cam = this.cameras?.main;
       if (!cam) return;
-      const target = this.overviewMode
-        ? Math.max(0.35, Math.min(this.scale.width / 2048, this.scale.height / 1024))
-        : this.getDesiredPlayZoom();
+      const minZoom = this.getMinRoomZoom();
+      const target = this.overviewMode ? minZoom : this.getDesiredPlayZoom();
       if (immediate) cam.setZoom(target);
     }
 
@@ -539,9 +574,13 @@ export function createMatchRenderer(
       return this.overviewMode;
     }
 
-    public focusActiveEntity(): void {
+    public focusActiveEntity(immediate = false): void {
       this.overviewMode = false;
       this.manualPanUntilMs = 0;
+      // Do not snap camera away while a weapon explosion or thrown character animation is still finishing
+      if (!immediate && performance.now() < this.actionHoldUntilMs) {
+        return;
+      }
       const cam = this.cameras?.main;
       if (cam && this.currentWorld?.activeCharacterId) {
         const pos =
@@ -555,18 +594,27 @@ export function createMatchRenderer(
     }
 
     public triggerEvents(events: readonly SimulationEvent[]): void {
+      const now = performance.now();
       for (const ev of events) {
         if (ev.type === 'explosion') {
           this.spawnExplosionVisual(ev.x, ev.y, ev.radius);
+          this.actionFocusPoint = { x: ev.x, y: ev.y };
+          this.actionHoldUntilMs = Math.max(this.actionHoldUntilMs, now + 1350);
         } else if (ev.type === 'character.damaged') {
           const pos = this.charPositions.get(ev.characterId);
           if (pos) {
             this.spawnFloatingText(pos.x, pos.y - 34, `-${ev.amount}`, '#ff4d36');
+            this.trackedThrownCharId = ev.characterId;
+            this.actionFocusPoint = { x: pos.x, y: pos.y };
+            this.actionHoldUntilMs = Math.max(this.actionHoldUntilMs, now + 1500);
           }
         } else if (ev.type === 'character.drowned') {
           const pos = this.charPositions.get(ev.characterId);
           if (pos) {
             this.spawnFloatingText(pos.x, pos.y - 24, 'Бульк!', '#63b8ff');
+            this.trackedThrownCharId = ev.characterId;
+            this.actionFocusPoint = { x: pos.x, y: pos.y };
+            this.actionHoldUntilMs = Math.max(this.actionHoldUntilMs, now + 1450);
           }
         }
       }
@@ -582,7 +630,7 @@ export function createMatchRenderer(
           targets: circle,
           scale: 2.35,
           alpha: 0,
-          duration: 340,
+          duration: 420,
           ease: 'Cubic.easeOut',
           onComplete: () => circle.destroy(),
         });
@@ -607,7 +655,7 @@ export function createMatchRenderer(
           targets: label,
           y: y - 40,
           alpha: 0,
-          duration: 850,
+          duration: 950,
           ease: 'Sine.easeOut',
           onComplete: () => label.destroy(),
         });
@@ -622,7 +670,6 @@ export function createMatchRenderer(
       const lerpFactor = Math.min(1, delta / 55);
 
       if (!this.currentWorld) {
-        // Draw scenic demo hedgehogs on the island while the lobby modal is open
         this.drawHedgehog(g, 520, 521, 1, 25, 0, false);
         this.drawHedgehog(g, 960, 501, -1, 15, 1, false);
         this.drawWater(
@@ -646,9 +693,9 @@ export function createMatchRenderer(
         pos.y += (pos.targetY - pos.y) * lerpFactor;
       }
 
-      this.updateCamera(world, time);
+      this.updateCamera(world, performance.now());
 
-      // Draw characters with clean floating HP numbers above helmets (like gameplay ui sample.jpg)
+      // Draw characters with clean floating HP numbers above helmets
       const activeCharIds = new Set<string>();
       for (const ch of world.characters) {
         if (!ch.alive && !ch.drowning) continue;
@@ -663,10 +710,14 @@ export function createMatchRenderer(
         const facing = aimOverride ? aimOverride.facing : ch.facing;
         const aimAngleDeg = aimOverride ? aimOverride.angleDeg : ch.aimAngleDeg;
 
+        // Use exact authoritative coordinates for active character when settled so aiming line matches physics 1:1
+        const drawX = isActive && ch.grounded && ch.moveInput === 0 ? ch.x : pos.x;
+        const drawY = isActive && ch.grounded && ch.moveInput === 0 ? ch.y : pos.y;
+
         this.drawHedgehog(
           g,
-          pos.x,
-          pos.y,
+          drawX,
+          drawY,
           facing,
           aimAngleDeg,
           colorIndex,
@@ -679,7 +730,7 @@ export function createMatchRenderer(
         let label = this.labelPool.get(ch.id);
         if (!label) {
           label = this.add
-            .text(pos.x, pos.y - 26, hpText, {
+            .text(drawX, drawY - 26, hpText, {
               fontFamily: 'system-ui, sans-serif',
               fontSize: '20px',
               fontStyle: '900',
@@ -692,7 +743,7 @@ export function createMatchRenderer(
         } else {
           label.setText(hpText);
           label.setColor(textHex);
-          label.setPosition(pos.x, pos.y - 24);
+          label.setPosition(drawX, drawY - 24);
           label.setVisible(true);
         }
       }
@@ -714,36 +765,74 @@ export function createMatchRenderer(
 
     private updateCamera(world: WorldState, nowMs: number): void {
       const cam = this.cameras.main;
+      const minZoom = this.getMinRoomZoom();
+
       if (this.overviewMode) {
-        const targetZoom = Math.max(
-          0.35,
-          Math.min(this.scale.width / world.terrain.width, this.scale.height / world.terrain.height),
-        );
-        cam.setZoom(Phaser.Math.Linear(cam.zoom, targetZoom, 0.12));
+        cam.setZoom(Phaser.Math.Linear(cam.zoom, minZoom, 0.12));
         cam.centerOn(world.terrain.width / 2, world.terrain.height / 2);
         return;
       }
 
       const desiredZoom = this.getDesiredPlayZoom();
-      cam.setZoom(Phaser.Math.Linear(cam.zoom, desiredZoom, 0.1));
+      cam.setZoom(Phaser.Math.Clamp(Phaser.Math.Linear(cam.zoom, desiredZoom, 0.1), minZoom, 1.65));
       if (nowMs < this.manualPanUntilMs) return;
 
+      // 1. Follow active projectile in flight
       const activeProj = world.projectiles.find((p) => p.active);
       if (activeProj) {
         const pPos = this.projPositions.get(activeProj.id) ?? activeProj;
+        this.actionFocusPoint = { x: pPos.x, y: pPos.y };
+        this.actionHoldUntilMs = Math.max(this.actionHoldUntilMs, nowMs + 1200);
         cam.centerOn(
-          Phaser.Math.Linear(cam.midPoint.x, pPos.x, 0.18),
-          Phaser.Math.Linear(cam.midPoint.y, pPos.y, 0.18),
+          Phaser.Math.Linear(cam.midPoint.x, pPos.x, 0.24),
+          Phaser.Math.Linear(cam.midPoint.y, pPos.y, 0.24),
         );
         return;
       }
 
+      // 2. Follow any character thrown off by an explosion or drowning
+      const thrownChar = world.characters.find(
+        (c) =>
+          (c.alive || c.drowning) &&
+          (c.id === this.trackedThrownCharId ||
+            c.drowning ||
+            ((!c.grounded || Math.hypot(c.vx, c.vy) > 0.6) &&
+              (world.phase !== 'control' || c.id !== world.activeCharacterId))),
+      );
+      if (thrownChar) {
+        this.trackedThrownCharId = thrownChar.id;
+        const cPos = this.charPositions.get(thrownChar.id) ?? thrownChar;
+        this.actionFocusPoint = { x: cPos.x, y: cPos.y };
+        if (!thrownChar.grounded || thrownChar.drowning || Math.hypot(thrownChar.vx, thrownChar.vy) > 0.3) {
+          this.actionHoldUntilMs = Math.max(this.actionHoldUntilMs, nowMs + 1150);
+        }
+      }
+
+      // 3. Keep camera on explosion / thrown character until the animation finishes
+      if (nowMs < this.actionHoldUntilMs && this.actionFocusPoint) {
+        if (this.trackedThrownCharId) {
+          const trackedPos = this.charPositions.get(this.trackedThrownCharId);
+          if (trackedPos) {
+            this.actionFocusPoint = { x: trackedPos.x, y: trackedPos.y };
+          }
+        }
+        cam.centerOn(
+          Phaser.Math.Linear(cam.midPoint.x, this.actionFocusPoint.x, 0.18),
+          Phaser.Math.Linear(cam.midPoint.y, this.actionFocusPoint.y + 40, 0.18),
+        );
+        return;
+      }
+
+      this.actionFocusPoint = null;
+      this.trackedThrownCharId = null;
+
+      // 4. Smoothly pan back to the active character
       if (world.activeCharacterId) {
         const cPos = this.charPositions.get(world.activeCharacterId);
         if (cPos) {
           cam.centerOn(
-            Phaser.Math.Linear(cam.midPoint.x, cPos.x, 0.1),
-            Phaser.Math.Linear(cam.midPoint.y, cPos.y + 85, 0.1),
+            Phaser.Math.Linear(cam.midPoint.x, cPos.x, 0.12),
+            Phaser.Math.Linear(cam.midPoint.y, cPos.y + 85, 0.12),
           );
         }
       }
@@ -779,7 +868,7 @@ export function createMatchRenderer(
       g.fillStyle(0x182026, 1);
       g.fillCircle(x + facing * 5, y + 1, 1.7);
 
-      // Military/cartoon helmet in team color (like gameplay ui sample.jpg)
+      // Military/cartoon helmet in team color
       g.fillStyle(helmetColor, 1);
       g.beginPath();
       g.arc(x, y - 1, r, Math.PI * 1.02, Math.PI * 1.98, false);
@@ -792,14 +881,15 @@ export function createMatchRenderer(
       g.fillStyle(0xd99b38, 1);
       g.fillRect(x - r, y - 3, r * 2, 3.5);
 
-      // Angry Birds slingshot trajectory dashes & pull band when active
+      // Angry Birds slingshot trajectory parabola & pull band when active
       if (isActive) {
-        const rad = (-aimAngleDeg * Math.PI) / 180;
-        const dirX = Math.cos(rad) * facing;
-        const dirY = Math.sin(rad);
+        const rad = (aimAngleDeg * Math.PI) / 180;
+        const dirX = facing * Math.cos(rad);
+        const dirY = -Math.sin(rad);
 
         if (chargePower !== null && chargePower > 0) {
-          const ratio = Math.min(1, chargePower / 1000);
+          const clampedPower = Math.max(0, Math.min(MAX_POWER, chargePower));
+          const ratio = clampedPower / MAX_POWER;
           const pullLen = 16 + ratio * 75;
 
           // Draw taut slingshot band behind the character (pull direction)
@@ -808,37 +898,53 @@ export function createMatchRenderer(
           g.fillStyle(0xffffff, 0.92);
           g.fillCircle(x - dirX * pullLen, y - dirY * pullLen, 5.5);
 
-          // Draw ballistic trajectory dashes thrown in the opposite direction
-          // The farther you pull, the more kinetic energy and the longer the trajectory
-          const speed = Math.max(0.5, ratio) * MAX_LAUNCH_SPEED;
-          let simX = x + dirX * 18;
-          let simY = y + dirY * 18;
-          let simVx = dirX * speed;
-          let simVy = dirY * speed;
-          const windAcc = (this.currentWorld?.wind ?? 0) * 0.012;
-          const dashSteps = 5 + Math.round(ratio * 18);
+          // Exact simulation-matched ballistic parabola with smooth fade:
+          // 100% opacity from 0% to 40% of the line, fading linearly to 0% at 70% of the line.
+          const launchSpeed = (clampedPower / MAX_POWER) * MAX_LAUNCH_SPEED_PER_TICK;
+          let simX = x;
+          let simY = y;
+          let simVx = dirX * launchSpeed;
+          let simVy = dirY * launchSpeed;
 
-          for (let step = 1; step <= dashSteps; step++) {
-            const prevX = simX;
-            const prevY = simY;
-            for (let sub = 0; sub < 3; sub++) {
-              simX += simVx;
-              simY += simVy;
-              simVx += windAcc;
-              simVy += GRAVITY_PER_TICK;
+          const maxVisibleTick = Math.floor(TOTAL_TRAJECTORY_TICKS * 0.7);
+          let dashStartX = simX;
+          let dashStartY = simY;
+
+          for (let tick = 1; tick <= maxVisibleTick; tick++) {
+            simVy += GRAVITY_PER_TICK;
+            if (Math.abs(simVx) > MAX_SPEED_PER_TICK) {
+              simVx = Math.sign(simVx) * MAX_SPEED_PER_TICK;
             }
-            if (step % 2 === 1) {
-              const alpha = Math.max(0.22, 0.95 - (step / (dashSteps + 2)) * 0.72);
-              g.lineStyle(3.5, 0xffffff, alpha);
-              g.lineBetween(prevX, prevY, simX, simY);
+            if (Math.abs(simVy) > MAX_SPEED_PER_TICK) {
+              simVy = Math.sign(simVy) * MAX_SPEED_PER_TICK;
+            }
+            simX += simVx;
+            simY += simVy;
+
+            const phaseInCycle = tick % 3;
+            if (phaseInCycle === 1) {
+              dashStartX = simX;
+              dashStartY = simY;
+            } else if (phaseInCycle === 0 && tick >= 3) {
+              const lineFraction = tick / TOTAL_TRAJECTORY_TICKS;
+              const alpha =
+                lineFraction <= 0.4
+                  ? 1.0
+                  : Math.max(0, 1.0 - (lineFraction - 0.4) / (0.7 - 0.4));
+              if (alpha > 0.01) {
+                g.lineStyle(3.5, 0xffffff, alpha);
+                g.lineBetween(dashStartX, dashStartY, simX, simY);
+              }
             }
           }
         } else {
-          // Idle short trajectory indicator (like gameplay ui sample.jpg)
+          // Idle short direction indicator
           for (let step = 1; step <= 4; step++) {
             const dotDist = 18 + step * 11;
-            g.fillStyle(0xffffff, 0.9 - step * 0.15);
-            g.fillCircle(x + dirX * dotDist, y + dirY * dotDist, 3.2 - step * 0.3);
+            const u = (step - 1) / 4;
+            const alpha = u <= 0.4 ? 1.0 : Math.max(0, 1.0 - (u - 0.4) / 0.6);
+            g.fillStyle(0xffffff, alpha);
+            g.fillCircle(x + dirX * dotDist, y + dirY * dotDist, 3.2 - step * 0.25);
           }
         }
       }
@@ -868,10 +974,9 @@ export function createMatchRenderer(
     private drawWater(width: number, height: number, waterLine: number, time: number): void {
       const wg = this.waterGraphics!;
       wg.clear();
-      // Turquoise-teal cartoon water with white foam crest matching gameplay ui sample.jpg
       const crestY = waterLine - 14;
       wg.fillStyle(0x18c5d8, 0.92);
-      wg.fillRect(0, crestY, width, height + 140 - crestY);
+      wg.fillRect(0, crestY, width, height + ROOM_WATER_BOTTOM_PAD - crestY);
       wg.lineStyle(4.5, 0xffffff, 0.96);
       wg.beginPath();
       const phase = reducedMotion ? 0 : time * 0.003;
@@ -894,8 +999,15 @@ export function createMatchRenderer(
     public getActiveCharacterScreenPoint(): { x: number; y: number } | null {
       const cam = this.cameras?.main;
       if (!cam || !this.currentWorld?.activeCharacterId) return null;
-      const pos = this.charPositions.get(this.currentWorld.activeCharacterId);
+      this.actionHoldUntilMs = 0;
+      this.actionFocusPoint = null;
+      this.trackedThrownCharId = null;
+      const authChar = this.currentWorld.characters.find(
+        (c) => c.id === this.currentWorld!.activeCharacterId,
+      );
+      const pos = authChar ?? this.charPositions.get(this.currentWorld.activeCharacterId);
       if (!pos) return null;
+      cam.centerOn(pos.x, pos.y + 85);
       cam.preRender();
       const screenX = (pos.x - cam.midPoint.x) * cam.zoom + cam.width * 0.5;
       const screenY = (pos.y - cam.midPoint.y) * cam.zoom + cam.height * 0.5;
@@ -929,7 +1041,7 @@ export function createMatchRenderer(
     setLocalAim: (localAim: LocalAimFeedback | null) => scene.setLocalAim(localAim),
     triggerEvents: (events: readonly SimulationEvent[]) => scene.triggerEvents(events),
     toggleOverview: () => scene.toggleOverview(),
-    focusActiveEntity: () => scene.focusActiveEntity(),
+    focusActiveEntity: (immediate?: boolean) => scene.focusActiveEntity(immediate),
     getDirtyChunkUpdateCount: () => scene.getDirtyChunkUpdateCount(),
     getCameraZoom: () => scene.getCameraZoom(),
     getActiveCharacterScreenPoint: () => scene.getActiveCharacterScreenPoint(),

@@ -6,7 +6,7 @@ export const games = [
     description: 'Маленькі їжачки. Великі плани. І трішечки гармидеру!',
     path: '/games/hedge-wars/',
     status: 'workshop' as const,
-    players: '2–4 гравці',
+    players: '2–8 гравців',
     clientDirectory: '01_hedge_wars/client/dist',
   },
 ] as const;

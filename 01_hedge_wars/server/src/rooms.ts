@@ -27,7 +27,6 @@ import {
 } from '@yizhaklub/hedge-protocol';
 import {
   TICKS_PER_SECOND,
-  applySimulationCommand,
   buildCuratedMapTerrain,
   computeWorldChecksum,
   consumeDirtyChunks,
@@ -521,7 +520,7 @@ export class RoomManager {
       teamName,
       colorIndex,
       hogNames,
-      ready: false,
+      ready: true,
       connected: true,
       disconnectedAtMs: null,
       forfeited: false,
@@ -967,9 +966,8 @@ export class RoomManager {
       turnTicks,
     });
 
-    // Roll initial wind and select first team's first character
+    // Select first team's first character (wind disabled: world.wind remains 0)
     const initEvents: SimulationEvent[] = [];
-    applySimulationCommand(world, { type: 'rollWind' }, initEvents);
     const firstTeamId = teams[0]!.id;
     const firstChar = characters.find((c) => c.teamId === firstTeamId && c.alive)!;
     world.activeTeamId = firstTeamId;
@@ -1403,8 +1401,6 @@ export class RoomManager {
     world.phase = 'control';
     match.turnIndex += 1;
     match.turnsPlayed += 1;
-
-    applySimulationCommand(world, { type: 'rollWind' }, match.pendingEvents);
   }
 
   private forfeitTeamInMatch(

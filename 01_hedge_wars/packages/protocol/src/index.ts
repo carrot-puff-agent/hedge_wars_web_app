@@ -183,7 +183,7 @@ export const MatchCommandAction = z.discriminatedUnion('kind', [
   }).strict(),
   z.object({
     kind: z.literal('fire'),
-    power: z.number().int().min(50).max(1000),
+    power: z.number().min(50).max(1000),
     angleDeg: z.number().min(-90).max(90).optional(),
     facing: z.union([z.literal(-1), z.literal(1)]).optional(),
     weapon: z.enum(['rocket', 'grenade']).optional(),

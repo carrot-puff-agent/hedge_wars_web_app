@@ -16,7 +16,7 @@ interface HedgeDebug {
   getActiveCharacterScreenPoint: () => { x: number; y: number } | null;
 }
 
-test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -> match -> pass turn -> Angry Birds slingshot crater convergence -> results -> rematch', async ({
+test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients set profile at app launch -> room list -> auto-ready match -> pass turn -> Angry Birds slingshot crater convergence -> results -> rematch', async ({
   browser,
 }) => {
   const contexts = await Promise.all([
@@ -36,11 +36,8 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -
   }
 
   try {
-    await Promise.all(pages.map((p) => p.goto('/games/hedge-wars/')));
-    for (const page of pages) {
-      await expect(page.locator('#connection')).toHaveText(/^(Онлайн|\d+\s*мс)$/);
-    }
-
+    // 1. All 4 players launch the main app hub (/), enter their name and pick their preferred color
+    await Promise.all(pages.map((p) => p.goto('/')));
     const [p1, p2, p3, p4] = pages as [
       (typeof pages)[0],
       (typeof pages)[0],
@@ -48,46 +45,56 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -
       (typeof pages)[0],
     ];
 
-    // Verify 10 distinct team color options are rendered
     await expect(p1.locator('.color-dot')).toHaveCount(10);
-
-    // Host (p1) enters name on first launch, picks color, and creates room (stored in localStorage)
     await p1.locator('#team-name-input').fill('Команда А');
     await p1.locator('.color-dot[data-color="4"]').click();
+
     const cachedPrefs = await p1.evaluate(() => ({
-      name: localStorage.getItem('yizhaklub.hedgeWars.playerName'),
-      color: localStorage.getItem('yizhaklub.hedgeWars.playerColor'),
+      name: localStorage.getItem('yizhaklub.playerName'),
+      color: localStorage.getItem('yizhaklub.playerColor'),
     }));
     expect(cachedPrefs.name).toBe('Команда А');
     expect(cachedPrefs.color).toBe('4');
 
-    await p1.locator('#btn-create-room').click();
-    await expect(p1.locator('#lobby-panel')).toBeVisible();
-    await expect(p1.locator('#lobby-host-name')).toHaveText('Команда А');
-
-    // Players 2, 3, 4 join the room directly from the live Available Rooms list (no room codes!)
     for (const [idx, page] of [p2, p3, p4].entries()) {
       await page.locator('#team-name-input').fill(`Команда ${idx + 2}`);
+      await page.locator(`.color-dot[data-color="${idx + 1}"]`).click();
+    }
+
+    // 2. All 4 players choose "Їжачі баталії" in the main app lobby -> opens active rooms screen
+    await Promise.all(
+      pages.map((p) => p.getByRole('link', { name: /Їжачі баталії/ }).click()),
+    );
+    for (const page of pages) {
+      await expect(page.locator('#connection')).toHaveText(/^(Онлайн|\d+\s*мс)$/);
+      await expect(page.locator('#lobby-backdrop')).toBeVisible();
+    }
+
+    // 3. Host (p1) creates room and sees map/match settings
+    await p1.locator('#btn-create-room').click();
+    await expect(p1.locator('#lobby-panel')).toBeVisible();
+    await expect(p1.locator('#host-settings')).toBeVisible();
+    await expect(p1.locator('#lobby-host-name')).toHaveText('Команда А');
+
+    // 4. Players 2, 3, 4 click the existing room -> automatically join and report ready!
+    for (const page of [p2, p3, p4]) {
       const roomCard = page.locator('.room-join-card', { hasText: 'Команда А' });
       await expect(roomCard).toBeVisible();
       await roomCard.click();
       await expect(page.locator('#lobby-panel')).toBeVisible();
+      await expect(page.locator('#btn-cancel-lobby')).toHaveText('Вийти з очікування');
     }
 
-    // Host configures 1 hedgehog per team
+    // Host configures 1 hedgehog per team and can start immediately without manual ready clicks
     await p1.locator('#setting-hogs-count').selectOption('1');
-
-    // All 4 players click Ready
-    for (const page of pages) {
-      await page.locator('#btn-ready').click();
-    }
     await expect(p1.locator('#btn-start-match')).toBeEnabled();
 
-    // Host starts match
+    // 5. Host starts match
     await p1.locator('#btn-start-match').click();
     for (const page of pages) {
       await expect(page.locator('#match-hud')).toBeVisible();
       await expect(page.locator('#match-controls')).toBeVisible();
+      await expect(page.locator('#lobby-backdrop')).toBeHidden();
     }
 
     // Verify full-viewport canvas, Jump Left / Move Left / Jump Right / Move Right / Pass Turn / Crate buttons (>= 48x48 CSS px) and zero scrolling (UI-A01)
@@ -118,15 +125,21 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -
     expect(layoutMetrics.noVerticalOverflow).toBe(true);
     expect(layoutMetrics.fullViewportCanvas).toBe(true);
 
-    // Save gameplay visual snapshot for comparison with gameplay ui sample.jpg
+    // Save gameplay visual snapshot
     await mkdir('.local/screenshots', { recursive: true });
     await p1.screenshot({ path: '.local/screenshots/gameplay-tablet.png' });
 
-    // Open and close weapon crate drawer
+    // Open weapon crate, select Grenade -> fuse timer buttons appear to the left of the weapon chest
     await p1.locator('#btn-weapon-crate').click();
     await expect(p1.locator('#weapon-drawer')).toBeVisible();
-    await p1.locator('#btn-weapon-rocket').click();
+    await p1.locator('#btn-weapon-grenade').click();
     await expect(p1.locator('#weapon-drawer')).toBeHidden();
+    await expect(p1.locator('#fuse-row')).toBeVisible();
+
+    // Switch back to Rocket -> fuse timer row hides
+    await p1.locator('#btn-weapon-crate').click();
+    await p1.locator('#btn-weapon-rocket').click();
+    await expect(p1.locator('#fuse-row')).toBeHidden();
 
     // Active player (p1, team-1) presses the circular timer with arrows to pass turn to team-2 (p2)
     await p1.locator('#btn-pass-turn').click();
@@ -142,7 +155,7 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -
       .toBe('team-2');
 
     // Active player (p2, team-2) aims and fires in Angry Birds style:
-    // touch active character, pull back (down-right so shot flies up-left), and release finger to fire
+    // touch active character, pull back, and release finger to fire
     const charScreenPt = await p2.evaluate(() =>
       (window as unknown as { __hedgeDebug: HedgeDebug }).__hedgeDebug.getActiveCharacterScreenPoint(),
     );
@@ -212,14 +225,13 @@ test('NET-07, UI-01..UI-05, GAME-01..GAME-03: 4 browser clients play room list -
     await expect(p1.locator('#results-panel')).toBeVisible();
     await expect(p1.locator('#results-headline')).toContainText('Перемагає команда');
 
-    // Host triggers rematch and Player 2 rejoins from the Available Rooms list (GAME-03)
+    // Host triggers rematch and Player 2 rejoins from the Active Rooms list -> automatically ready!
     await p1.locator('#btn-rematch').click();
     await expect(p1.locator('#lobby-panel')).toBeVisible();
     const roomCard = p2.locator('.room-join-card', { hasText: 'Команда А' });
     await expect(roomCard).toBeVisible();
     await roomCard.click();
     await expect(p2.locator('#lobby-panel')).toBeVisible();
-    await p2.locator('#btn-ready').click();
     await expect(p1.locator('#btn-start-match')).toBeEnabled();
 
     expect(errors).toEqual([]);

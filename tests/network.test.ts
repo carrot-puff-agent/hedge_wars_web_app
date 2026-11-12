@@ -202,7 +202,12 @@ test('NET-02 & NET-08: up to 8 players create/join/configure/ready/start, 9th re
   const r2State = await otherRoomClient.waitFor('room.state');
   assert.notEqual(r2State.roomCode, roomCode);
 
-  // Clients 2..8 join room 1 (up to 8 teams total)
+  // Cannot start with only 1 player before others join
+  c1.send({ type: 'room.start' });
+  const errSingleStart = await c1.waitFor('server.error');
+  assert.equal(errSingleStart.code, 'NOT_READY_TO_START');
+
+  // Clients 2..8 join room 1 (up to 8 teams total) and are automatically marked ready
   for (const [idx, client] of [c2, c3, c4, c5, c6, c7, c8].entries()) {
     client.send({
       type: 'room.join',
@@ -212,6 +217,7 @@ test('NET-02 & NET-08: up to 8 players create/join/configure/ready/start, 9th re
     });
     const state = await client.waitFor('room.state', (m) => m.players.length === idx + 2);
     assert.equal(state.roomCode, roomCode);
+    assert.equal(state.status, 'ready');
   }
 
   // 9th client is rejected with ROOM_FULL
@@ -239,16 +245,16 @@ test('NET-02 & NET-08: up to 8 players create/join/configure/ready/start, 9th re
   );
   assert.equal(configuredState.settings.grenadeAmmo, 3);
 
-  // Cannot start before all players are ready
+  // If a player explicitly un-readies, start is blocked until ready again
+  c1.inbox.length = 0;
+  c2.send({ type: 'room.ready', ready: false });
+  await c1.waitFor('room.state', (m) => m.status === 'waiting');
   c1.send({ type: 'room.start' });
   const errNotReady = await c1.waitFor('server.error');
   assert.equal(errNotReady.code, 'NOT_READY_TO_START');
 
-  // All 8 players ready up
-  for (const client of [c1, c2, c3, c4, c5, c6, c7, c8]) {
-    client.send({ type: 'room.ready', ready: true });
-  }
-  const readyState = await c1.waitFor('room.state', (m) => m.status === 'ready');
+  c2.send({ type: 'room.ready', ready: true });
+  const readyState = await c1.waitFor('room.state', (m) => m.status === 'ready' && m.players.length === 8);
   assert.equal(readyState.players.length, 8);
 
   // Room 2 remained untouched

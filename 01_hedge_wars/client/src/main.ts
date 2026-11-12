@@ -20,62 +20,49 @@ import {
   type WeaponKind,
   type WorldState,
 } from '@yizhaklub/hedge-simulation';
+import {
+  loadCachedColorIndex,
+  loadCachedPlayerName,
+} from '../../../platform/profile';
 import { SoundController } from './audio';
 import type { LocalAimFeedback } from './renderer';
 import './style.css';
 
 const RESUME_TOKEN_STORAGE_KEY = 'yizhaklub.hedgeWars.resumeToken';
-const PLAYER_NAME_STORAGE_KEY = 'yizhaklub.hedgeWars.playerName';
-const PLAYER_COLOR_STORAGE_KEY = 'yizhaklub.hedgeWars.playerColor';
 
 const sound = new SoundController();
+sound.setMuted(false);
+sound.unlockFromGesture();
 
-function loadCachedPlayerName(): string {
-  try {
-    return localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.trim() ?? '';
-  } catch {
-    return '';
-  }
+function resolvePlayerProfile(): { name: string; colorIndex: number } {
+  const colorIndex = loadCachedColorIndex();
+  const cachedName = loadCachedPlayerName();
+  const preset = TEAM_PRESETS_UK[colorIndex] ?? TEAM_PRESETS_UK[0];
+  return {
+    name: cachedName.length > 0 ? cachedName : preset.name,
+    colorIndex,
+  };
 }
 
-function loadCachedColorIndex(): number {
-  try {
-    const raw = localStorage.getItem(PLAYER_COLOR_STORAGE_KEY);
-    if (raw === null) return 0;
-    const parsed = Number(raw);
-    return Number.isInteger(parsed) && parsed >= 0 && parsed < TEAM_PRESETS_UK.length ? parsed : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function savePlayerPreferences(name: string, colorIndex: number): void {
-  try {
-    if (name.trim().length > 0) {
-      localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim());
-    }
-    localStorage.setItem(PLAYER_COLOR_STORAGE_KEY, String(colorIndex));
-  } catch {
-    // ignore storage errors in restricted environments
-  }
-}
-
-const initialCachedName = loadCachedPlayerName();
-const initialCachedColor = loadCachedColorIndex();
+const initialProfile = resolvePlayerProfile();
+const initialPreset = TEAM_PRESETS_UK[initialProfile.colorIndex] ?? TEAM_PRESETS_UK[0];
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div class="game-viewport">
     <!-- Full-screen game canvas -->
     <div id="field" class="field-canvas" role="img" aria-label="Сонячна галявина їжачків. Ігрове поле баталій."></div>
 
-    <!-- Floating Corner Top Bar (visible in menus/lobby) -->
+    <!-- Neutral backdrop for room lobby & results (ready for blurred artwork later) -->
+    <div id="lobby-backdrop" class="lobby-backdrop" aria-hidden="true"></div>
+
+    <!-- Floating Corner Top Bar (visible in room lobby) -->
     <header id="menu-topbar" class="menu-topbar">
       <a class="corner-pill back" href="/" aria-label="До ігор">← До ігор</a>
       <div class="corner-right-group">
+        <span id="player-profile-pill" class="profile-pill" style="--team-color: ${initialPreset.hex}">
+          ${initialPreset.symbol} ${initialProfile.name}
+        </span>
         <span id="connection" class="status-dot" role="status" aria-live="polite" title="З’єднання з сервером">Онлайн</span>
-        <button id="btn-mute" type="button" class="square-icon-btn" aria-label="Перемкнути звук">
-          ${sound.isMuted() ? '✕' : '♪'}
-        </button>
       </div>
     </header>
 
@@ -90,7 +77,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       Чекаємо на повернення гравця…
     </div>
 
-    <!-- IN-MATCH FLOATING HUD (Modeled directly on gameplay ui sample.jpg) -->
+    <!-- IN-MATCH FLOATING HUD -->
     <section id="match-hud" class="match-hud-overlay" aria-label="Стан бою" hidden>
       <!-- Top-Left: Circular Timer (press to pass turn) + Leave Button -->
       <div class="hud-top-left">
@@ -109,23 +96,32 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
         </button>
       </div>
 
-      <!-- Top-Right: Weapon Crate Button + Popover Drawer -->
+      <!-- Top-Right: Horizontal Timer Row (to left of Weapon Chest) + Weapon Chest + Popover Drawer -->
       <div class="hud-top-right">
-        <button id="btn-weapon-crate" type="button" class="crate-btn" aria-label="Арсенал зброї" title="Вибір зброї">
-          <svg viewBox="0 0 64 64" aria-hidden="true" class="crate-svg">
-            <polygon points="8,22 32,10 56,22 56,46 32,56 8,46" fill="#8b7d5b" stroke="#2c2619" stroke-width="3" stroke-linejoin="round"/>
-            <polygon points="8,22 32,32 56,22 32,10" fill="#a89974" stroke="#2c2619" stroke-width="2.5" stroke-linejoin="round"/>
-            <line x1="20" y1="16" x2="44" y2="27" stroke="#2c2619" stroke-width="2.5"/>
-            <line x1="32" y1="32" x2="32" y2="56" stroke="#2c2619" stroke-width="2.5"/>
-            <rect x="40" y="34" width="10" height="7" rx="1" fill="#e6dfc8" stroke="#2c2619" stroke-width="1.5" transform="rotate(-18 45 37)"/>
-          </svg>
-          <span id="crate-weapon-badge" class="crate-badge" hidden>6</span>
-        </button>
+        <div class="hud-top-right-bar">
+          <div id="fuse-row" class="fuse-row" role="group" aria-label="Таймер зброї" hidden>
+            <button type="button" class="fuse-btn" data-fuse="1">1с</button>
+            <button type="button" class="fuse-btn" data-fuse="2">2с</button>
+            <button type="button" class="fuse-btn active-fuse" data-fuse="3">3с</button>
+            <button type="button" class="fuse-btn" data-fuse="4">4с</button>
+            <button type="button" class="fuse-btn" data-fuse="5">5с</button>
+          </div>
+
+          <button id="btn-weapon-crate" type="button" class="crate-btn" aria-label="Арсенал зброї" title="Вибір зброї">
+            <svg viewBox="0 0 64 64" aria-hidden="true" class="crate-svg">
+              <polygon points="8,22 32,10 56,22 56,46 32,56 8,46" fill="#8b7d5b" stroke="#2c2619" stroke-width="3" stroke-linejoin="round"/>
+              <polygon points="8,22 32,32 56,22 32,10" fill="#a89974" stroke="#2c2619" stroke-width="2.5" stroke-linejoin="round"/>
+              <line x1="20" y1="16" x2="44" y2="27" stroke="#2c2619" stroke-width="2.5"/>
+              <line x1="32" y1="32" x2="32" y2="56" stroke="#2c2619" stroke-width="2.5"/>
+              <rect x="40" y="34" width="10" height="7" rx="1" fill="#e6dfc8" stroke="#2c2619" stroke-width="1.5" transform="rotate(-18 45 37)"/>
+            </svg>
+            <span id="crate-weapon-badge" class="crate-badge" hidden>6</span>
+          </button>
+        </div>
 
         <div id="weapon-drawer" class="weapon-drawer" hidden>
           <div class="drawer-meta-row">
             <span id="active-turn-label" class="turn-chip">Твій хід</span>
-            <span id="wind-label" class="wind-chip" title="Вітер">Вітер 0%</span>
           </div>
           <div class="weapon-row">
             <button id="btn-weapon-rocket" type="button" class="touch-btn weapon-tile active-weapon" aria-label="Ракета">
@@ -138,13 +134,6 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
               <span class="w-name">Граната</span>
               <span id="ammo-grenade" class="w-ammo">6</span>
             </button>
-          </div>
-          <div id="fuse-row" class="fuse-row" hidden>
-            <button type="button" class="fuse-btn" data-fuse="1">1с</button>
-            <button type="button" class="fuse-btn" data-fuse="2">2с</button>
-            <button type="button" class="fuse-btn active-fuse" data-fuse="3">3с</button>
-            <button type="button" class="fuse-btn" data-fuse="4">4с</button>
-            <button type="button" class="fuse-btn" data-fuse="5">5с</button>
           </div>
         </div>
       </div>
@@ -187,45 +176,24 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       </div>
     </section>
 
-    <!-- CENTERED APP DIALOG: ENTRY (Cached Player Name + 10 Team Colors + Live Available Rooms List) -->
+    <!-- CENTERED APP DIALOG: ACTIVE ROOMS BROWSER -->
     <section id="entry-panel" class="modal-card" aria-label="Кімнати для гри">
       <h1 class="modal-title">Їжачі баталії</h1>
 
-      <div class="team-setup-strip">
-        <input
-          id="team-name-input"
-          type="text"
-          maxlength="24"
-          placeholder="Введи своє ім’я…"
-          value="${initialCachedName}"
-          aria-label="Ім’я гравця"
-          autocomplete="nickname"
-        />
-        <div class="color-picker" role="group" aria-label="Колір команди">
-          ${TEAM_PRESETS_UK.map(
-            (preset, idx) => `
-            <button type="button" class="color-dot ${idx === initialCachedColor ? 'selected-chip' : ''}" data-color="${idx}" style="--chip-color: ${preset.hex}" aria-label="${preset.name}" title="${preset.name}">
-              ${preset.symbol}
-            </button>
-          `,
-          ).join('')}
-        </div>
-      </div>
-
       <div class="rooms-browser">
         <div class="rooms-browser-header">
-          <span>Доступні кімнати</span>
+          <span>Активні кімнати</span>
           <button id="btn-create-room" type="button" class="game-action-btn primary-action">
             + Створити кімнату
           </button>
         </div>
         <ul id="available-rooms-list" class="available-rooms-list" aria-label="Список доступних кімнат">
-          <li class="empty-rooms-hint">Немає відкритих кімнат — створи нову!</li>
+          <li class="empty-rooms-hint">Немає активних кімнат — створи власну!</li>
         </ul>
       </div>
     </section>
 
-    <!-- CENTERED APP DIALOG: WAITING ROOM LOBBY (up to 8 players) -->
+    <!-- CENTERED APP DIALOG: ROOM SETUP (HOST) / WAITING ROOM (GUEST) -->
     <section id="lobby-panel" class="modal-card" aria-label="Кімната очікування" hidden>
       <div class="lobby-top">
         <div class="code-pill">
@@ -233,12 +201,16 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
           <strong id="lobby-host-name">---</strong>
         </div>
         <span id="lobby-status-text" class="lobby-hint" role="status" aria-live="polite">2–${MAX_ROOM_PLAYERS} гравців</span>
-        <button id="btn-leave-room" type="button" class="icon-close-btn" aria-label="Вийти з кімнати">✕</button>
+        <button id="btn-leave-room" type="button" class="icon-close-btn" aria-label="Вийти з кімнати" title="Вийти з кімнати">✕</button>
       </div>
 
-      <ul id="lobby-players" class="compact-player-list" aria-label="Гравці в кімнаті"></ul>
-
       <div id="host-settings" class="compact-settings" hidden>
+        <label aria-label="Мапа">
+          <span>Мапа</span>
+          <select id="setting-map" disabled>
+            <option value="meadow-boulders" selected>Галявина</option>
+          </select>
+        </label>
         <label aria-label="Час на хід">
           <span>Хід</span>
           <select id="setting-turn-sec">
@@ -266,8 +238,12 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
         </label>
       </div>
 
+      <ul id="lobby-players" class="compact-player-list" aria-label="Гравці в кімнаті"></ul>
+
       <div class="lobby-bottom">
-        <button id="btn-ready" type="button" class="game-action-btn primary-action">Готовий до бою!</button>
+        <button id="btn-cancel-lobby" type="button" class="game-action-btn secondary-action">
+          Вийти з очікування
+        </button>
         <button id="btn-start-match" type="button" class="game-action-btn start-action" hidden disabled>
           Почати баталію!
         </button>
@@ -288,6 +264,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 `;
 
 const unlockAudioOnce = () => {
+  sound.setMuted(false);
   sound.unlockFromGesture();
 };
 window.addEventListener('pointerdown', unlockAudioOnce, { passive: true });
@@ -295,8 +272,9 @@ window.addEventListener('keydown', unlockAudioOnce, { passive: true });
 
 // DOM elements
 const statusEl = document.querySelector<HTMLElement>('#connection')!;
+const playerProfilePill = document.querySelector<HTMLElement>('#player-profile-pill')!;
+const lobbyBackdrop = document.querySelector<HTMLElement>('#lobby-backdrop')!;
 const menuTopbar = document.querySelector<HTMLElement>('#menu-topbar')!;
-const btnMute = document.querySelector<HTMLButtonElement>('#btn-mute')!;
 const errorBanner = document.querySelector<HTMLElement>('#error-banner')!;
 const errorText = document.querySelector<HTMLElement>('#error-text')!;
 const btnReloadApp = document.querySelector<HTMLButtonElement>('#btn-reload-app')!;
@@ -306,7 +284,6 @@ const matchHud = document.querySelector<HTMLElement>('#match-hud')!;
 const activeTurnLabel = document.querySelector<HTMLElement>('#active-turn-label')!;
 const btnPassTurn = document.querySelector<HTMLButtonElement>('#btn-pass-turn')!;
 const turnTimerLabel = document.querySelector<HTMLElement>('#turn-timer-label')!;
-const windLabel = document.querySelector<HTMLElement>('#wind-label')!;
 const btnMatchLeave = document.querySelector<HTMLButtonElement>('#btn-match-leave')!;
 const btnWeaponCrate = document.querySelector<HTMLButtonElement>('#btn-weapon-crate')!;
 const crateWeaponBadge = document.querySelector<HTMLElement>('#crate-weapon-badge')!;
@@ -314,7 +291,6 @@ const weaponDrawer = document.querySelector<HTMLElement>('#weapon-drawer')!;
 const matchControls = document.querySelector<HTMLElement>('#match-controls')!;
 
 const entryPanel = document.querySelector<HTMLElement>('#entry-panel')!;
-const teamNameInput = document.querySelector<HTMLInputElement>('#team-name-input')!;
 const btnCreateRoom = document.querySelector<HTMLButtonElement>('#btn-create-room')!;
 const availableRoomsList = document.querySelector<HTMLUListElement>('#available-rooms-list')!;
 
@@ -326,7 +302,7 @@ const hostSettingsBox = document.querySelector<HTMLElement>('#host-settings')!;
 const settingTurnSec = document.querySelector<HTMLSelectElement>('#setting-turn-sec')!;
 const settingHogsCount = document.querySelector<HTMLSelectElement>('#setting-hogs-count')!;
 const settingGrenades = document.querySelector<HTMLSelectElement>('#setting-grenades')!;
-const btnReady = document.querySelector<HTMLButtonElement>('#btn-ready')!;
+const btnCancelLobby = document.querySelector<HTMLButtonElement>('#btn-cancel-lobby')!;
 const btnStartMatch = document.querySelector<HTMLButtonElement>('#btn-start-match')!;
 const btnLeaveRoom = document.querySelector<HTMLButtonElement>('#btn-leave-room')!;
 
@@ -350,7 +326,6 @@ let socket: WebSocket | null = null;
 let connected = false;
 let mySessionId: string | null = null;
 let myTeamId: string | null = null;
-let selectedColorIndex = initialCachedColor;
 
 let availableRooms: PublicRoomSummary[] = [];
 let currentRoomCode: string | null = null;
@@ -373,7 +348,7 @@ let localGrenadeFuseSec: 1 | 2 | 3 | 4 | 5 = 3;
 let currentChargePower: number | null = null;
 let lastAimSentAtMs = 0;
 
-// Instantiate full-screen Match Renderer with Angry Birds slingshot callbacks
+// Instantiate full-screen Match Renderer with smooth Angry Birds slingshot callbacks
 const { createMatchRenderer } = await import('./renderer');
 const renderer = createMatchRenderer('field', {
   onSlingshotAim: (angleDeg, facing, power) => {
@@ -384,11 +359,11 @@ const renderer = createMatchRenderer('field', {
     weaponDrawer.hidden = true;
     syncLocalAimFeedback();
     const now = performance.now();
-    if (power !== null && now - lastAimSentAtMs >= 80) {
+    if (power !== null && now - lastAimSentAtMs >= 65) {
       lastAimSentAtMs = now;
       sendMatchCommand({
         kind: 'aim',
-        angleDeg: Math.round(localAimAngleDeg),
+        angleDeg: Number(localAimAngleDeg.toFixed(3)),
         facing: localFacing,
       });
     }
@@ -403,19 +378,14 @@ const renderer = createMatchRenderer('field', {
     sendMatchCommand({
       kind: 'fire',
       weapon: localSelectedWeapon,
-      angleDeg: Math.round(angleDeg),
+      angleDeg: Number(angleDeg.toFixed(3)),
       facing,
-      power: Math.min(1000, Math.max(120, Math.round(power))),
+      power: Math.min(1000, Math.max(120, Number(power.toFixed(2)))),
       ...(localSelectedWeapon === 'grenade'
         ? { grenadeFuseSeconds: localGrenadeFuseSec }
         : {}),
     });
   },
-});
-
-btnMute.addEventListener('click', () => {
-  const muted = sound.toggleMute();
-  btnMute.textContent = muted ? '✕' : '♪';
 });
 
 btnReloadApp.addEventListener('click', () => {
@@ -472,61 +442,44 @@ function showError(messageUk: string, requiresReload = false): void {
   }
 }
 
-// Persist player name and 10-color choice in device cache (localStorage)
-teamNameInput.addEventListener('input', () => {
-  savePlayerPreferences(teamNameInput.value, selectedColorIndex);
-});
-
-document.querySelectorAll<HTMLButtonElement>('.color-dot').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    document.querySelectorAll('.color-dot').forEach((c) => c.classList.remove('selected-chip'));
-    chip.classList.add('selected-chip');
-    selectedColorIndex = Number(chip.dataset.color ?? 0);
-    savePlayerPreferences(teamNameInput.value, selectedColorIndex);
-  });
-});
-
-function resolveChosenPlayerName(): string | null {
-  const typed = teamNameInput.value.trim();
-  if (typed.length > 0) {
-    savePlayerPreferences(typed, selectedColorIndex);
-    return typed;
-  }
-  showError('Спочатку введи своє ім’я!');
-  teamNameInput.focus();
-  return null;
+function refreshProfileBadge(): { name: string; colorIndex: number } {
+  const profile = resolvePlayerProfile();
+  const preset = TEAM_PRESETS_UK[profile.colorIndex] ?? TEAM_PRESETS_UK[0];
+  playerProfilePill.style.setProperty('--team-color', preset.hex);
+  playerProfilePill.textContent = `${preset.symbol} ${profile.name}`;
+  return profile;
 }
 
 btnCreateRoom.addEventListener('click', () => {
+  unlockAudioOnce();
   errorBanner.hidden = true;
-  const playerName = resolveChosenPlayerName();
-  if (!playerName) return;
-  const preset = TEAM_PRESETS_UK[selectedColorIndex] ?? TEAM_PRESETS_UK[0];
+  const profile = refreshProfileBadge();
+  const preset = TEAM_PRESETS_UK[profile.colorIndex] ?? TEAM_PRESETS_UK[0];
   sendClientMessage({
     type: 'room.create',
-    teamName: playerName,
-    colorIndex: selectedColorIndex,
+    teamName: profile.name,
+    colorIndex: profile.colorIndex,
     hogNames: [...preset.hogs],
   });
 });
 
 function joinAvailableRoom(roomCode: string): void {
+  unlockAudioOnce();
   errorBanner.hidden = true;
-  const playerName = resolveChosenPlayerName();
-  if (!playerName) return;
-  const preset = TEAM_PRESETS_UK[selectedColorIndex] ?? TEAM_PRESETS_UK[0];
+  const profile = refreshProfileBadge();
+  const preset = TEAM_PRESETS_UK[profile.colorIndex] ?? TEAM_PRESETS_UK[0];
   sendClientMessage({
     type: 'room.join',
     roomCode,
-    teamName: playerName,
-    colorIndex: selectedColorIndex,
+    teamName: profile.name,
+    colorIndex: profile.colorIndex,
     hogNames: [...preset.hogs],
   });
 }
 
 function renderAvailableRoomsList(): void {
   if (availableRooms.length === 0) {
-    availableRoomsList.innerHTML = `<li class="empty-rooms-hint">Немає відкритих кімнат — створи нову!</li>`;
+    availableRoomsList.innerHTML = `<li class="empty-rooms-hint">Немає активних кімнат — створи власну!</li>`;
     return;
   }
   availableRoomsList.innerHTML = availableRooms
@@ -555,6 +508,9 @@ function renderAvailableRoomsList(): void {
 btnLeaveRoom.addEventListener('click', () => {
   sendClientMessage({ type: 'room.leave' });
 });
+btnCancelLobby.addEventListener('click', () => {
+  sendClientMessage({ type: 'room.leave' });
+});
 btnMatchLeave.addEventListener('click', () => {
   sendClientMessage({ type: 'room.leave' });
 });
@@ -562,17 +518,13 @@ btnResultsLeave.addEventListener('click', () => {
   sendClientMessage({ type: 'room.leave' });
 });
 
-btnReady.addEventListener('click', () => {
-  const me = currentPlayers.find((p) => p.sessionId === mySessionId);
-  if (!me) return;
-  sendClientMessage({ type: 'room.ready', ready: !me.ready });
-});
-
 btnStartMatch.addEventListener('click', () => {
+  unlockAudioOnce();
   sendClientMessage({ type: 'room.start' });
 });
 
 btnRematch.addEventListener('click', () => {
+  unlockAudioOnce();
   sendClientMessage({ type: 'room.rematch' });
 });
 
@@ -607,6 +559,7 @@ btnWeaponGrenade.addEventListener('click', () => {
   btnWeaponGrenade.classList.add('active-weapon');
   btnWeaponRocket.classList.remove('active-weapon');
   fuseRow.hidden = false;
+  weaponDrawer.hidden = true;
   if (isMyTurnInControl()) {
     sendMatchCommand({
       kind: 'selectWeapon',
@@ -622,7 +575,6 @@ document.querySelectorAll<HTMLButtonElement>('.fuse-btn').forEach((btn) => {
     localGrenadeFuseSec = fuse;
     document.querySelectorAll('.fuse-btn').forEach((b) => b.classList.remove('active-fuse'));
     btn.classList.add('active-fuse');
-    weaponDrawer.hidden = true;
     if (isMyTurnInControl()) {
       sendMatchCommand({
         kind: 'selectWeapon',
@@ -743,12 +695,15 @@ function updatePanels(): void {
   const isResults = inRoom && currentRoomStatus === 'results';
   const isLobby = inRoom && (currentRoomStatus === 'waiting' || currentRoomStatus === 'ready');
 
+  lobbyBackdrop.hidden = isPlaying;
   menuTopbar.hidden = isPlaying;
   entryPanel.hidden = inRoom;
   lobbyPanel.hidden = !isLobby;
   matchHud.hidden = !isPlaying;
   matchControls.hidden = !isPlaying;
   resultsPanel.hidden = !isResults;
+
+  refreshProfileBadge();
 
   if (!inRoom) {
     pauseBanner.hidden = true;
@@ -766,6 +721,7 @@ function updatePanels(): void {
     hostSettingsBox.hidden = !isHost;
     btnStartMatch.hidden = !isHost;
     btnStartMatch.disabled = currentRoomStatus !== 'ready';
+    btnCancelLobby.textContent = isHost ? 'Скасувати' : 'Вийти з очікування';
 
     if (currentSettings) {
       settingTurnSec.value = String(currentSettings.turnDurationSeconds);
@@ -775,17 +731,13 @@ function updatePanels(): void {
 
     const me = currentPlayers.find((p) => p.sessionId === mySessionId);
     myTeamId = me?.teamId ?? null;
-    if (me) {
-      btnReady.textContent = me.ready ? '✓ Готовий' : 'Готовий до бою!';
-      btnReady.classList.toggle('ready-active', me.ready);
-    }
 
     if (currentPlayers.length < 2) {
       lobbyStatusText.textContent = `Чекаємо гравців (1/${MAX_ROOM_PLAYERS})`;
-    } else if (currentRoomStatus === 'ready') {
-      lobbyStatusText.textContent = isHost ? 'Усі готові!' : 'Чекаємо старт…';
+    } else if (isHost) {
+      lobbyStatusText.textContent = `Гравців: ${currentPlayers.length}/${MAX_ROOM_PLAYERS} · Готово до старту`;
     } else {
-      lobbyStatusText.textContent = `Гравців: ${currentPlayers.length}/${MAX_ROOM_PLAYERS}`;
+      lobbyStatusText.textContent = `Гравців: ${currentPlayers.length}/${MAX_ROOM_PLAYERS} · Чекаємо старт від хоста…`;
     }
 
     lobbyPlayers.innerHTML = currentPlayers
@@ -793,11 +745,11 @@ function updatePanels(): void {
         const preset = TEAM_PRESETS_UK[p.colorIndex % TEAM_PRESETS_UK.length]!;
         const isMe = p.sessionId === mySessionId;
         const isHostPlayer = p.sessionId === currentHostSessionId;
-        const stateBadge = !p.connected ? '⚡' : p.ready ? '✓' : '…';
+        const stateBadge = !p.connected ? '⚡' : '✓';
         return `
           <li class="player-slot" style="--team-color: ${preset.hex}">
             <span class="team-badge">${preset.symbol} ${p.teamName}${isMe ? ' (Ти)' : ''}${isHostPlayer ? ' ★' : ''}</span>
-            <span class="ready-badge ${p.ready ? 'is-ready' : ''}">${stateBadge}</span>
+            <span class="ready-badge is-ready">${stateBadge}</span>
           </li>
         `;
       })
@@ -827,10 +779,6 @@ function updatePanels(): void {
     turnTimerLabel.textContent = String(secLeft);
     btnPassTurn.disabled = !myTurn;
 
-    const windPct = Math.round((localWorld.wind / 0.069444) * 100);
-    const windDir = windPct > 5 ? '▶' : windPct < -5 ? '◀' : '•';
-    windLabel.textContent = `Вітер ${windDir}${Math.abs(windPct)}%`;
-
     const myTeamState = localWorld.teams.find((t) => t.id === myTeamId);
     if (myTeamState) {
       ammoRocketEl.textContent = String(myTeamState.inventory.rocket);
@@ -838,6 +786,7 @@ function updatePanels(): void {
       crateWeaponBadge.textContent = String(myTeamState.inventory.grenade);
     }
 
+    fuseRow.hidden = localSelectedWeapon !== 'grenade';
     matchControls.classList.toggle('controls-disabled', !myTurn);
   }
 }
@@ -1016,7 +965,7 @@ function handleServerMessage(msg: ServerMessage): void {
 
       renderer.refreshFullTerrain(localWorld.terrain);
       renderer.setWorldState(localWorld, null);
-      renderer.focusActiveEntity();
+      renderer.focusActiveEntity(true);
       syncLocalAimFeedback();
       updatePanels();
       break;
@@ -1104,7 +1053,7 @@ function handleServerMessage(msg: ServerMessage): void {
           : null,
       );
       if (switchedTurnChar) {
-        renderer.focusActiveEntity();
+        renderer.focusActiveEntity(false);
       }
       updatePanels();
       break;
