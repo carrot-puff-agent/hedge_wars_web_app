@@ -64,7 +64,7 @@ Dependencies: Phases 1–3. Gate: GAME-A01–GAME-A04.
 Dependencies: complete game loop and protocol compatibility. Gate: PWA-A01–PWA-A05, OPS-A01–OPS-A04.
 
 - [~] PWA-01 — Versioned PWA shell worker and offline assets implemented, Chrome-emulated tests passed. Match-aware update availability UI and activation between matches remain open. See 2026-11-12-lxc session.
-- [ ] PWA-02 — Verify manifest/icons, Android installation, standalone launch and root/game deep links over HTTPS.
+- [~] PWA-02 — Authenticated manifest cookie regression reproduced and fixed on both pages; deployed LXC build awaiting Samsung retest. Actual Android installation and HTTPS deep links remain to be verified.
 - [ ] PWA-03 — Test cached-client/server mismatch, reload recovery and cache cleanup. Do not claim offline multiplayer.
 - [ ] OPS-01 — Obtain domain/target host details and configure user-approved HTTPS/WSS ingress (Cloudflare Tunnel or equivalent).
 - [~] OPS-02 — Dedicated LXC systemd service enabled, active and restart-tested on port 9999; documented. Actual reboot and rollback rehearsal remain open for OPS-A02. Preserve original VM agent-service conventions on that host.

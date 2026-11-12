@@ -36,6 +36,29 @@ test('reduced motion and keyboard navigation remain usable', async ({ page }) =>
   expect((await response.json()).lang).toBe('uk');
 });
 
+test('Chrome sends the session cookie when fetching the protected manifest on both pages', async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: 'pwa_test_session', value: 'test-only', url: baseURL! }]);
+  let receivedCookie: boolean | undefined;
+  await page.route('**/manifest.webmanifest', async (route) => {
+    const headers = await route.request().allHeaders();
+    receivedCookie = headers.cookie?.includes('pwa_test_session=test-only') ?? false;
+    if (!receivedCookie) return route.fulfill({ status: 401, body: 'Authentication required' });
+    return route.continue();
+  });
+  for (const path of ['/', '/games/hedge-wars/']) {
+    receivedCookie = undefined;
+    await page.goto(path);
+    const client = await context.newCDPSession(page);
+    try {
+      await client.send('Page.getAppManifest');
+      await expect.poll(() => receivedCookie).toBe(true);
+      await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('crossorigin', 'use-credentials');
+    } finally {
+      await client.detach();
+    }
+  }
+});
+
 test('PWA installs its shell cache and serves visited routes offline', async ({ page, context }) => {
   test.skip(process.env.E2E_MODE === 'development', 'Service worker is generated for production builds.');
   await page.goto('/');

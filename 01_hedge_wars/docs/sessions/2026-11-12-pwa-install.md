@@ -1,5 +1,7 @@
 # 2026-11-12 — Samsung PWA installation investigation
 
+**Superseded:** the user identified authenticated manifest fetching as the relevant fix. The missing `crossorigin="use-credentials"` was reproduced and corrected; do not make the suggested Access bypass changes. See `2026-11-12-manifest-credentials.md`.
+
 - Scope: investigate the user's report that Chrome on a Samsung tablet says the app cannot be installed after the user confirms installation.
 - Public URL: `https://gamehub-home.firsoff.co.ua/`.
 - No application code, server service or Cloudflare configuration changed during this investigation.
